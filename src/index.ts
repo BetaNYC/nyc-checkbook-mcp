@@ -13,6 +13,19 @@ import {
   type Criteria,
 } from "./checkbook.js";
 
+// ─── Disclaimer ──────────────────────────────────────────────────────────────
+
+const DISCLAIMER =
+  "\n\n---\n⚠️ Data disclaimer: Results are sourced from Checkbook NYC, " +
+  "published by the NYC Office of the Comptroller. Accuracy depends on data " +
+  "submitted by City agencies to the Comptroller's office. Records may be " +
+  "incomplete, delayed, or reflect amendments. Verify critical figures " +
+  "directly at checkbooknyc.com or via FOIL request to the relevant agency.";
+
+function withDisclaimer(json: unknown): string {
+  return JSON.stringify(json, null, 2) + DISCLAIMER;
+}
+
 // ─── Server setup ─────────────────────────────────────────────────────────────
 
 const server = new Server(
@@ -382,15 +395,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
+              text: withDisclaimer(
                 {
                   query,
                   total_results: result.total,
                   returned: result.results.length,
                   results: result.results,
-                },
-                null,
-                2
+                }
               ),
             },
           ],
@@ -488,7 +499,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
+              text: withDisclaimer(
                 {
                   total_records: result.total_records,
                   page: input.page,
@@ -496,9 +507,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   has_more: result.total_records > input.page * pageSize,
                   records: result.records,
                   error: result.error,
-                },
-                null,
-                2
+                }
               ),
             },
           ],
@@ -532,10 +541,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
-                { contract_id, records: result.records, error: result.error },
-                null,
-                2
+              text: withDisclaimer(
+                { contract_id, records: result.records, error: result.error }
               ),
             },
           ],
@@ -608,7 +615,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
+              text: withDisclaimer(
                 {
                   total_records: result.total_records,
                   page: input.page,
@@ -616,9 +623,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   has_more: result.total_records > input.page * pageSize,
                   records: result.records,
                   error: result.error,
-                },
-                null,
-                2
+                }
               ),
             },
           ],
@@ -661,7 +666,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
+              text: withDisclaimer(
                 {
                   total_records: result.total_records,
                   page: input.page,
@@ -669,9 +674,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   has_more: result.total_records > input.page * pageSize,
                   records: result.records,
                   error: result.error,
-                },
-                null,
-                2
+                }
               ),
             },
           ],
@@ -724,7 +727,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
+              text: withDisclaimer(
                 {
                   total_records: result.total_records,
                   page: input.page,
@@ -732,9 +735,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   has_more: result.total_records > input.page * pageSize,
                   records: result.records,
                   error: result.error,
-                },
-                null,
-                2
+                }
               ),
             },
           ],
@@ -774,7 +775,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
+              text: withDisclaimer(
                 {
                   total_records: result.total_records,
                   page: input.page,
@@ -782,9 +783,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   has_more: result.total_records > input.page * pageSize,
                   records: result.records,
                   error: result.error,
-                },
-                null,
-                2
+                }
               ),
             },
           ],
@@ -818,7 +817,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
+              text: withDisclaimer(
                 {
                   agency_code: input.agency_code,
                   fiscal_year: input.fiscal_year,
@@ -828,9 +827,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   has_more: result.total_records > input.page * pageSize,
                   records: result.records,
                   error: result.error,
-                },
-                null,
-                2
+                }
               ),
             },
           ],
