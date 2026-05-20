@@ -1,0 +1,37 @@
+{
+  "name": "@betanyc/nyc-checkbook-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for NYC Checkbook spending, contracts, budget, payroll, and revenue data",
+  "license": "MIT",
+  "author": "BetaNYC",
+  "homepage": "https://github.com/BetaNYC/nyc-checkbook-mcp",
+  "bugs": {
+    "url": "https://github.com/BetaNYC/nyc-checkbook-mcp/issues"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "nyc-checkbook-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "fast-xml-parser": "^5.8.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
