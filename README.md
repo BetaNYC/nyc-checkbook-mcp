@@ -273,6 +273,12 @@ Or if installed globally:
 
 ---
 
+## Acknowledgments
+
+Thank you to the [NYC Office of the Comptroller](https://comptroller.nyc.gov/) for building and maintaining Checkbook NYC as a public resource, and for open-sourcing the platform at [github.com/NYCComptroller/Checkbook](https://github.com/NYCComptroller/Checkbook). Financial transparency infrastructure like this makes civic research and accountability work possible.
+
+---
+
 ## License
 
 MIT © [BetaNYC](https://beta.nyc)
