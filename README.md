@@ -212,14 +212,17 @@ get_agency_spending("040", "2025")   // NYPD
 
 ## Installation
 
-```bash
-npm install -g @betanyc/nyc-checkbook-mcp
-```
-
-Or run directly with `npx`:
+### npx (recommended — no install required)
 
 ```bash
 npx @betanyc/nyc-checkbook-mcp
+```
+
+### Global install
+
+```bash
+npm install -g @betanyc/nyc-checkbook-mcp
+nyc-checkbook-mcp
 ```
 
 No API key required — Checkbook NYC is a public API.
