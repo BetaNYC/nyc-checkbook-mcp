@@ -8,6 +8,12 @@ Vibe coded with [Claude](https://claude.ai) by [BetaNYC](https://beta.nyc).
 
 ---
 
+## API key
+
+**No API key is required.** Checkbook NYC is a public API, so this server works out of the box — no signup, no token, no environment variables to set.
+
+---
+
 ## What it does
 
 Exposes 8 tools over MCP:
