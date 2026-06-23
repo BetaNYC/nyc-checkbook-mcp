@@ -288,6 +288,10 @@ Thank you to the [NYC Office of the Comptroller](https://comptroller.nyc.gov/) f
 
 ---
 
+## Support our work
+
+Freedom isn't free. [Support BetaNYC](https://beta.nyc/donate/).
+
 ## License
 
 MIT © [BetaNYC](https://beta.nyc)
