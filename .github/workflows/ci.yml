@@ -26,12 +26,21 @@ on:
       - "**/*.ts"
       - "package.json"
       - "package-lock.json"
+      - ".github/workflows/**"
   push:
     branches: [main]
     paths:
       - "**/*.ts"
       - "package.json"
       - "package-lock.json"
+      - ".github/workflows/**"
+  # Manual trigger — lets us fire a run on any branch. Needed because a
+  # path-scoped pull_request/push event does not fire on the very PR that
+  # introduces the workflow, so this gate never executed on its own PR (#2).
+  # Adding `.github/workflows/**` to the path filters above closes that gap for
+  # future workflow edits; this dispatch is retained permanently as a low-cost
+  # affordance for on-demand re-runs.
+  workflow_dispatch:
 
 permissions:
   contents: read
