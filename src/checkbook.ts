@@ -12,9 +12,12 @@ import { XMLBuilder, XMLParser } from "fast-xml-parser";
 const API_ENDPOINT = "https://www.checkbooknyc.com/api";
 const SMART_SEARCH_ENDPOINT = "https://www.checkbooknyc.com/smart_search/citywide";
 
+// parseTagValue must stay false: numeric-looking codes ("040" agency codes,
+// long contract/document IDs) would otherwise be coerced to numbers, dropping
+// leading zeros and losing precision. All values are returned as strings.
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
-  parseTagValue: true,
+  parseTagValue: false,
   trimValues: true,
 });
 
@@ -74,7 +77,7 @@ function encodeXmlValue(val: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function buildRequestXml(req: ApiRequest): string {
+export function buildRequestXml(req: ApiRequest): string {
   const criteriaXml = (req.criteria ?? [])
     .map((c) => {
       if (c.type === "range") {
@@ -91,7 +94,7 @@ function buildRequestXml(req: ApiRequest): string {
   return `<request><type_of_data>${req.type_of_data}</type_of_data><records_from>${req.records_from ?? 1}</records_from><max_records>${req.max_records ?? 1000}</max_records>${criteriaXml ? `<search_criteria>${criteriaXml}</search_criteria>` : ""}${columnsXml ? `<response_columns>${columnsXml}</response_columns>` : ""}</request>`;
 }
 
-function parseResponse(xmlText: string): ApiResponse {
+export function parseResponse(xmlText: string): ApiResponse {
   try {
     const parsed = xmlParser.parse(xmlText);
     const response = parsed?.response;
@@ -147,14 +150,53 @@ function parseResponse(xmlText: string): ApiResponse {
 
 // ─── Core API call ────────────────────────────────────────────────────────────
 
+const USER_AGENT =
+  "betanyc-checkbook-mcp/1.0.1 (github.com/BetaNYC/nyc-checkbook-mcp)";
+const REQUEST_TIMEOUT_MS = 60_000;
+
+/** POST with a 60s timeout; retries once on 5xx or network failure. */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (response.status >= 500 && attempt === 0) {
+        lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        continue;
+      }
+      return response;
+    } catch (err) {
+      lastError = err;
+      if (attempt === 1) break;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 export async function callCheckbookApi(req: ApiRequest): Promise<ApiResponse> {
   const body = buildRequestXml(req);
 
-  const response = await fetch(API_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/xml" },
-    body,
-  });
+  let response: Response;
+  try {
+    response = await fetchWithRetry(API_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/xml", "User-Agent": USER_AGENT },
+      body,
+    });
+  } catch (err) {
+    return {
+      success: false,
+      total_records: 0,
+      records: [],
+      error: `Request failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
 
   if (!response.ok) {
     return {
@@ -176,26 +218,93 @@ export interface SmartSearchResult {
   fields: Record<string, string>;
 }
 
+export interface SmartSearchOutcome {
+  available: boolean;
+  total: number;
+  results: SmartSearchResult[];
+  reason?: string;
+  fallback?: string;
+}
+
+/**
+ * Detect whether a smart_search HTTP response is usable server-side.
+ *
+ * Verified live 2026-07-06: checkbooknyc.com fronts /smart_search with an
+ * Imperva/Incapsula WAF that answers non-browser clients with a JavaScript
+ * challenge (302 "Loading" interstitial, then 403 with an _Incapsula_Resource
+ * iframe). The results grid itself is also rendered client-side by
+ * JavaScript, so even a passed challenge would return no data in the raw
+ * HTML. This function classifies those failure shapes.
+ */
+export function classifySmartSearchResponse(
+  status: number,
+  html: string
+): { usable: boolean; reason?: string } {
+  if (status >= 400) {
+    return { usable: false, reason: `HTTP ${status} (WAF challenge or error)` };
+  }
+  if (/_Incapsula_Resource|Incapsula incident ID/i.test(html)) {
+    return { usable: false, reason: "Blocked by Incapsula WAF JavaScript challenge" };
+  }
+  if (!/TRANSACTION #\d+:/.test(html)) {
+    return {
+      usable: false,
+      reason: "Response contains no result data (results are rendered client-side by JavaScript)",
+    };
+  }
+  return { usable: true };
+}
+
+const SMART_SEARCH_UNAVAILABLE_FALLBACK =
+  "Use the structured tools instead (search_contracts with vendor_name, " +
+  "search_spending with payee_name, etc.), or browse the search in a web " +
+  "browser at https://www.checkbooknyc.com/smart_search";
+
+/**
+ * Attempt a smart search against the Checkbook NYC web endpoint.
+ *
+ * NOTE: as of 2026-07-06 this endpoint is not usable server-side (Incapsula
+ * WAF JS challenge + client-side-rendered results). The request is still
+ * attempted in case access is restored, but callers should expect
+ * `available: false` with a structured reason and fallback guidance.
+ */
 export async function smartSearch(
   query: string,
   limit = 25
-): Promise<{ total: number; results: SmartSearchResult[] }> {
+): Promise<SmartSearchOutcome> {
   const url = `${SMART_SEARCH_ENDPOINT}?search_term=${encodeURIComponent(query)}`;
 
-  const response = await fetch(url, {
-    headers: { Accept: "text/html" },
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  let status: number;
+  let html: string;
+  try {
+    const response = await fetchWithRetry(url, {
+      headers: { Accept: "text/html", "User-Agent": USER_AGENT },
+    });
+    status = response.status;
+    html = await response.text();
+  } catch (err) {
+    return {
+      available: false,
+      total: 0,
+      results: [],
+      reason: `Request failed: ${err instanceof Error ? err.message : String(err)}`,
+      fallback: SMART_SEARCH_UNAVAILABLE_FALLBACK,
+    };
   }
 
-  const html = await response.text();
+  const check = classifySmartSearchResponse(status, html);
+  if (!check.usable) {
+    return {
+      available: false,
+      total: 0,
+      results: [],
+      reason: check.reason,
+      fallback: SMART_SEARCH_UNAVAILABLE_FALLBACK,
+    };
+  }
 
-  // Parse results from the page text — extract structured transaction blocks
+  // Best-effort parse if the endpoint ever returns server-rendered results.
   const results: SmartSearchResult[] = [];
-
-  // Match TRANSACTION blocks
   const transactionPattern =
     /TRANSACTION #\d+:\s*(\w+[\w\s]*?)\n([\s\S]*?)(?=TRANSACTION #\d+:|Showing:|$)/g;
 
@@ -216,11 +325,10 @@ export async function smartSearch(
     }
   }
 
-  // Extract total count from "Showing: X to Y of Z entries"
   const countMatch = html.match(/Showing:\s*\d+\s*to\s*\d+\s*of\s*(\d+)\s*entries/i);
   const total = countMatch ? parseInt(countMatch[1], 10) : results.length;
 
-  return { total, results };
+  return { available: true, total, results };
 }
 
 // ─── Default response columns per domain ────────────────────────────────────
@@ -272,39 +380,51 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "fiscal_year",
     "budget_code",
   ],
+  // Budget/Payroll/Revenue column names verified live against the API
+  // (2026-07-06): invalid names are rejected with error code 1101.
   Budget: [
-    "agency_name",
-    "department_name",
+    "agency",
+    "department",
     "expense_category",
-    "adopted_budget",
-    "modified_budget",
+    "budget_code",
+    "budget_name",
+    "adopted",
+    "modified",
+    "committed",
     "pre_encumbered",
     "encumbered",
     "accrued_expense",
     "cash_expense",
     "post_adjustment",
     "year",
-    "budget_code",
   ],
   Payroll: [
-    "agency_name",
-    "last_name",
-    "first_name",
+    "agency",
     "title",
-    "base_salary",
+    "pay_frequency",
     "pay_date",
-    "amount",
+    "payroll_type",
+    "annual_salary",
+    "hourly_rate",
+    "gross_pay",
+    "base_pay",
     "other_payments",
-    "year",
+    "overtime_payments",
+    "gross_pay_ytd",
+    "fiscal_year",
+    "calendar_year",
   ],
   Revenue: [
-    "agency_name",
+    "agency",
     "revenue_category",
+    "revenue_source",
     "revenue_class",
-    "budget_code",
-    "adopted_budget",
-    "modified_budget",
+    "fund_class",
+    "funding_class",
+    "budget_fiscal_year",
+    "fiscal_year",
+    "adopted",
+    "modified",
     "recognized",
-    "year",
   ],
 };
