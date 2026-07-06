@@ -282,6 +282,12 @@ Or if installed globally:
 
 ---
 
+## Releases
+
+Publishing is automated. Pushing a tag of the form `v<version>` (matching `package.json`) runs `.github/workflows/release.yml`, which tests, publishes to npm with provenance, and creates a GitHub Release with generated notes. Requires the `NPM_TOKEN` repository secret. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## Acknowledgments
 
 Thank you to the [NYC Office of the Comptroller](https://comptroller.nyc.gov/) for building and maintaining Checkbook NYC as a public resource, and for open-sourcing the platform at [github.com/NYCComptroller/Checkbook](https://github.com/NYCComptroller/Checkbook). Financial transparency infrastructure like this makes civic research and accountability work possible.

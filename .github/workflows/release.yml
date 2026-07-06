@@ -1,0 +1,64 @@
+# Release gate for @betanyc/nyc-checkbook-mcp.
+#
+# Trigger: pushing a tag of the form v* (e.g. v1.0.2). The workflow verifies
+# the tag matches package.json's version, runs the test suite if one exists,
+# publishes to npm with provenance, and creates a GitHub Release with
+# auto-generated notes.
+#
+# Prerequisite: an NPM_TOKEN repository secret (npm automation token with
+# publish rights to @betanyc/nyc-checkbook-mcp). Provenance requires the
+# id-token: write permission and publishing from GitHub Actions.
+#
+# This never runs on branch pushes or PRs — only tags. Do not tag until the
+# version bump is merged to main.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create the GitHub Release
+  id-token: write # npm provenance attestation
+
+jobs:
+  publish:
+    name: Publish to npm + GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test --if-present
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "${PKG_VERSION}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}" >&2
+            exit 1
+          fi
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --generate-notes
