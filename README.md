@@ -25,7 +25,7 @@ Exposes 8 tools over MCP:
 | `get_contract` | Look up a single contract by ID |
 | `search_spending` | Search spending (check) records by agency, payee, contract, date, amount |
 | `search_budget` | Search budget data by agency, department, fiscal year |
-| `search_payroll` | Search payroll records by agency, name, title, salary range |
+| `search_payroll` | Search payroll records by agency, title, pay frequency, pay date, amount range (no employee names) |
 | `search_revenue` | Search revenue data by agency and fiscal year |
 | `get_agency_spending` | All spending for a specific agency in a fiscal year |
 
@@ -37,12 +37,14 @@ Exposes 8 tools over MCP:
 
 ### `smart_search`
 
-Full-text search across all Checkbook NYC data. Searches Purpose fields, vendor names, and all text fields. **Use this for product/software name lookups.**
+Full-text search across all Checkbook NYC data. Searches Purpose fields, vendor names, and all text fields.
+
+> **Availability caveat (verified 2026-07-06):** the underlying checkbooknyc.com `/smart_search` web endpoint is fronted by an Incapsula WAF and renders its results client-side with JavaScript, so it is generally **not usable server-side**. When blocked, this tool returns a structured error with fallback guidance (use `search_contracts` / `search_spending`, or browse [checkbooknyc.com/smart_search](https://www.checkbooknyc.com/smart_search) in a browser).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `query` | string | yes | — | Search term — product name, keyword, or phrase |
-| `limit` | number | no | 25 | Max results to return |
+| `limit` | number | no | 25 | Max results to return (max 100) |
 
 ```
 smart_search("ArchiveSocial")
@@ -94,6 +96,7 @@ Look up a single contract by ID.
 |---|---|---|---|---|
 | `contract_id` | string | yes | — | e.g. `"CT185820201424467"` or `"DO185820252009241"` |
 | `status` | string | no | `registered` | `registered` or `pending` |
+| `category` | string | no | `expense` | `expense` or `revenue` |
 
 ```
 get_contract("CT185820201424467")
@@ -122,7 +125,7 @@ Search NYC spending records (checks issued to vendors).
 | `page` | number | no | `1` | Pagination |
 | `page_size` | number | no | `50` | Results per page (max 1000) |
 
-*Either `fiscal_year` or `issue_date_from` should be provided.
+*Either `fiscal_year` or `issue_date_from` is required (enforced).
 
 ```
 search_spending(agency_code="858", fiscal_year="2024")
@@ -137,7 +140,7 @@ Search NYC budget allocations.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `fiscal_year` | string | no | — | e.g. `"2025"` |
+| `fiscal_year` | string | no | — | e.g. `"2026"` (sent to the API as the Budget domain's `year` criterion) |
 | `agency_code` | string | no | — | 3-digit agency code |
 | `department_code` | string | no | — | Department code |
 | `budget_code` | string | no | — | Budget code |
@@ -148,18 +151,25 @@ Search NYC budget allocations.
 
 ### `search_payroll`
 
-Search NYC payroll records.
+Search NYC payroll records. **Requires `fiscal_year` or `calendar_year`.**
+
+> The Checkbook NYC API does **not** expose employee names — payroll records are keyed by agency, title, pay frequency, and pay date. There is no employee-name search.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `fiscal_year` | string | no | — | e.g. `"2024"` |
+| `fiscal_year` | string | no* | — | e.g. `"2026"` |
+| `calendar_year` | string | no* | — | e.g. `"2025"` |
 | `agency_code` | string | no | — | 3-digit agency code |
-| `last_name` | string | no | — | Employee last name |
-| `title` | string | no | — | Job title |
-| `salary_min` | number | no | — | Minimum base salary |
-| `salary_max` | number | no | — | Maximum base salary |
+| `title` | string | no | — | Job title (partial match) |
+| `pay_frequency` | string | no | — | e.g. `"BI-WEEKLY"`, `"SUPPLEMENTAL"` |
+| `pay_date_from` | string | no | — | YYYY-MM-DD |
+| `pay_date_to` | string | no | — | YYYY-MM-DD |
+| `amount_min` | number | no | — | Minimum payment amount |
+| `amount_max` | number | no | — | Maximum payment amount |
 | `page` | number | no | `1` | Pagination |
 | `page_size` | number | no | `50` | Results per page |
+
+*Either `fiscal_year` or `calendar_year` is required (enforced).
 
 ---
 
@@ -169,9 +179,14 @@ Search NYC revenue data.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `fiscal_year` | string | no | — | e.g. `"2025"` |
+| `fiscal_year` | string | no | — | e.g. `"2026"` |
+| `budget_fiscal_year` | string | no | — | e.g. `"2026"` |
 | `agency_code` | string | no | — | 3-digit agency code |
-| `budget_code` | string | no | — | Budget code |
+| `revenue_category` | string | no | — | 2-character revenue category code |
+| `revenue_class` | string | no | — | Revenue class code |
+| `revenue_source` | string | no | — | Revenue source code |
+| `fund_class` | string | no | — | Fund class code |
+| `funding_class` | string | no | — | Funding class code |
 | `page` | number | no | `1` | Pagination |
 | `page_size` | number | no | `50` | Results per page |
 

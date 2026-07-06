@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<response>
+  <status>
+    <result>success</result>
+  </status>
+  <request_criteria>
+    <request>
+      <type_of_data>Budget</type_of_data>
+      <records_from>1</records_from>
+      <max_records>2</max_records>
+      <search_criteria>
+        <criteria>
+          <name>year</name>
+          <type>value</type>
+          <value>2026</value>
+        </criteria>
+        <criteria>
+          <name>agency_code</name>
+          <type>value</type>
+          <value>846</value>
+        </criteria>
+      </search_criteria>
+    </request>
+  </request_criteria>
+  <result_records>
+    <record_count>12397</record_count>
+    <budget_transactions>
+      <transaction>
+        <agency>Department of Parks and Recreation</agency>
+        <year>2026</year>
+        <department>MAINTENANCE &amp; OPERATIONS</department>
+        <expense_category>SEASONAL POSITIONS</expense_category>
+        <budget_code>2801</budget_code>
+        <budget_name>POP JTP Program - City</budget_name>
+        <budget_amounts>
+          <modified>42733327</modified>
+          <adopted>44733327</adopted>
+          <committed>39349393.65</committed>
+        </budget_amounts>
+        <expenditure_amounts>
+          <pre_encumbered>0</pre_encumbered>
+          <encumbered>0</encumbered>
+          <cash_expense>39349393.65</cash_expense>
+          <post_adjustment>0</post_adjustment>
+          <accrued_expense>0</accrued_expense>
+        </expenditure_amounts>
+      </transaction>
+      <transaction>
+        <agency>Department of Parks and Recreation</agency>
+        <year>2026</year>
+        <department>DESIGN &amp; ENGINEERING</department>
+        <expense_category>FULL YEAR POSITIONS</expense_category>
+        <budget_code>3808</budget_code>
+        <budget_name>CAPITAL PROJECTS-DESIGN</budget_name>
+        <budget_amounts>
+          <modified>28246386</modified>
+          <adopted>28246386</adopted>
+          <committed>25527884.24</committed>
+        </budget_amounts>
+        <expenditure_amounts>
+          <pre_encumbered>0</pre_encumbered>
+          <encumbered>0</encumbered>
+          <cash_expense>25527884.24</cash_expense>
+          <post_adjustment>0</post_adjustment>
+          <accrued_expense>0</accrued_expense>
+        </expenditure_amounts>
+      </transaction>
+    </budget_transactions>
+  </result_records>
+</response>

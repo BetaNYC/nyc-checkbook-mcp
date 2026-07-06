@@ -41,9 +41,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "smart_search",
       description:
         "Full-text search across all Checkbook NYC data — contracts, spending, payroll, budget, revenue. " +
-        "Searches the Purpose field and all other text fields. " +
-        "IMPORTANT: Use this tool when searching by product name, software name, or keyword (e.g. 'ArchiveSocial', 'Salesforce'). " +
-        "The structured search tools only match exact vendor names and may miss contracts held by resellers.",
+        "CAVEAT: the underlying checkbooknyc.com web endpoint is protected by a WAF and renders results " +
+        "client-side, so this tool is frequently unavailable server-side. When it is, it returns a " +
+        "structured explanation and fallback guidance (use search_contracts/search_spending, or browse " +
+        "checkbooknyc.com/smart_search in a browser). The structured search tools only match exact " +
+        "vendor names and may miss contracts held by resellers.",
       inputSchema: {
         type: "object",
         properties: {
@@ -168,6 +170,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             enum: ["registered", "pending"],
             description: "Contract status (default: registered)",
           },
+          category: {
+            type: "string",
+            enum: ["expense", "revenue"],
+            description: "Contract category (default: expense)",
+          },
         },
         required: ["contract_id"],
       },
@@ -274,33 +281,48 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "search_payroll",
       description:
-        "Search NYC payroll records by agency, employee name, title, or salary range.",
+        "Search NYC payroll records by agency, job title, pay frequency, pay date, or amount range. " +
+        "Requires fiscal_year or calendar_year. " +
+        "NOTE: the Checkbook NYC API does not expose employee names — payroll data is aggregated by " +
+        "agency/title/pay date. There is no employee-name search.",
       inputSchema: {
         type: "object",
         properties: {
           fiscal_year: {
             type: "string",
-            description: "Fiscal year, e.g. '2024'",
+            description: "Fiscal year, e.g. '2026'. Either fiscal_year or calendar_year is required.",
+          },
+          calendar_year: {
+            type: "string",
+            description: "Calendar year, e.g. '2025'. Either fiscal_year or calendar_year is required.",
           },
           agency_code: {
             type: "string",
-            description: "3-digit agency code",
-          },
-          last_name: {
-            type: "string",
-            description: "Employee last name",
+            description: "3-digit agency code, e.g. '846' for Parks",
           },
           title: {
             type: "string",
-            description: "Job title",
+            description: "Job title (partial match)",
           },
-          salary_min: {
-            type: "number",
-            description: "Minimum base salary",
+          pay_frequency: {
+            type: "string",
+            description: "Pay frequency, e.g. 'BI-WEEKLY', 'SUPPLEMENTAL'",
           },
-          salary_max: {
+          pay_date_from: {
+            type: "string",
+            description: "Pay date range start (YYYY-MM-DD)",
+          },
+          pay_date_to: {
+            type: "string",
+            description: "Pay date range end (YYYY-MM-DD)",
+          },
+          amount_min: {
             type: "number",
-            description: "Maximum base salary",
+            description: "Minimum payment amount",
+          },
+          amount_max: {
+            type: "number",
+            description: "Maximum payment amount",
           },
           page: {
             type: "number",
@@ -317,21 +339,41 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "search_revenue",
       description:
-        "Search NYC revenue data by agency, revenue category, or fiscal year.",
+        "Search NYC revenue data by agency, revenue category/class/source, fund class, or fiscal year.",
       inputSchema: {
         type: "object",
         properties: {
           fiscal_year: {
             type: "string",
-            description: "Fiscal year, e.g. '2024'",
+            description: "Fiscal year, e.g. '2026'",
+          },
+          budget_fiscal_year: {
+            type: "string",
+            description: "Budget fiscal year, e.g. '2026'",
           },
           agency_code: {
             type: "string",
             description: "3-digit agency code",
           },
-          budget_code: {
+          revenue_category: {
             type: "string",
-            description: "Budget code",
+            description: "2-character revenue category code (not the category name)",
+          },
+          revenue_class: {
+            type: "string",
+            description: "Revenue class code",
+          },
+          revenue_source: {
+            type: "string",
+            description: "Revenue source code",
+          },
+          fund_class: {
+            type: "string",
+            description: "Fund class code",
+          },
+          funding_class: {
+            type: "string",
+            description: "Funding class code",
           },
           page: {
             type: "number",
@@ -385,11 +427,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
       // ── smart_search ──────────────────────────────────────────────────────
       case "smart_search": {
-        const { query, limit = 25 } = z
-          .object({ query: z.string(), limit: z.number().optional() })
+        const { query, limit } = z
+          .object({
+            query: z.string(),
+            limit: z.number().int().min(1).max(100).optional().default(25),
+          })
           .parse(args);
 
         const result = await smartSearch(query, limit);
+
+        if (!result.available) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    query,
+                    available: false,
+                    reason: result.reason,
+                    fallback: result.fallback,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+            isError: true,
+          };
+        }
 
         return {
           content: [
@@ -516,16 +582,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // ── get_contract ──────────────────────────────────────────────────────
       case "get_contract": {
-        const { contract_id, status = "registered" } = z
+        const { contract_id, status = "registered", category = "expense" } = z
           .object({
             contract_id: z.string(),
             status: z.enum(["registered", "pending"]).optional().default("registered"),
+            category: z.enum(["expense", "revenue"]).optional().default("expense"),
           })
           .parse(args);
 
         const criteria: Criteria[] = [
           { name: "status", type: "value", value: status },
-          { name: "category", type: "value", value: "expense" },
+          { name: "category", type: "value", value: category },
           { name: "contract_id", type: "value", value: contract_id },
         ];
 
@@ -566,6 +633,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             mwbe_category: z.string().optional(),
             page: z.number().optional().default(1),
             page_size: z.number().optional().default(50),
+          })
+          .refine((v) => v.fiscal_year || v.issue_date_from, {
+            message: "Either fiscal_year or issue_date_from is required.",
           })
           .parse(args);
 
@@ -644,8 +714,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           .parse(args);
 
         const criteria: Criteria[] = [];
+        // The Budget domain's year criterion is named "year", not "fiscal_year".
         if (input.fiscal_year)
-          criteria.push({ name: "fiscal_year", type: "value", value: input.fiscal_year });
+          criteria.push({ name: "year", type: "value", value: input.fiscal_year });
         if (input.agency_code)
           criteria.push({ name: "agency_code", type: "value", value: input.agency_code });
         if (input.department_code)
@@ -686,31 +757,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const input = z
           .object({
             fiscal_year: z.string().optional(),
+            calendar_year: z.string().optional(),
             agency_code: z.string().optional(),
-            last_name: z.string().optional(),
             title: z.string().optional(),
-            salary_min: z.number().optional(),
-            salary_max: z.number().optional(),
+            pay_frequency: z.string().optional(),
+            pay_date_from: z.string().optional(),
+            pay_date_to: z.string().optional(),
+            amount_min: z.number().optional(),
+            amount_max: z.number().optional(),
             page: z.number().optional().default(1),
             page_size: z.number().optional().default(50),
+          })
+          .refine((v) => v.fiscal_year || v.calendar_year, {
+            message: "Either fiscal_year or calendar_year is required.",
           })
           .parse(args);
 
         const criteria: Criteria[] = [];
         if (input.fiscal_year)
           criteria.push({ name: "fiscal_year", type: "value", value: input.fiscal_year });
+        if (input.calendar_year)
+          criteria.push({ name: "calendar_year", type: "value", value: input.calendar_year });
         if (input.agency_code)
           criteria.push({ name: "agency_code", type: "value", value: input.agency_code });
-        if (input.last_name)
-          criteria.push({ name: "last_name", type: "value", value: input.last_name });
         if (input.title)
           criteria.push({ name: "title", type: "value", value: input.title });
-        if (input.salary_min !== undefined || input.salary_max !== undefined) {
+        if (input.pay_frequency)
+          criteria.push({ name: "pay_frequency", type: "value", value: input.pay_frequency });
+        if (input.pay_date_from || input.pay_date_to) {
           criteria.push({
-            name: "base_salary",
+            name: "pay_date",
             type: "range",
-            start: String(input.salary_min ?? 0),
-            end: String(input.salary_max ?? 99999999),
+            start: input.pay_date_from ?? "1990-01-01",
+            end: input.pay_date_to ?? "2099-12-31",
+          });
+        }
+        if (input.amount_min !== undefined || input.amount_max !== undefined) {
+          criteria.push({
+            name: "amount",
+            type: "range",
+            start: String(input.amount_min ?? 0),
+            end: String(input.amount_max ?? 99999999),
           });
         }
 
@@ -747,8 +834,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const input = z
           .object({
             fiscal_year: z.string().optional(),
+            budget_fiscal_year: z.string().optional(),
             agency_code: z.string().optional(),
-            budget_code: z.string().optional(),
+            revenue_category: z.string().optional(),
+            revenue_class: z.string().optional(),
+            revenue_source: z.string().optional(),
+            fund_class: z.string().optional(),
+            funding_class: z.string().optional(),
             page: z.number().optional().default(1),
             page_size: z.number().optional().default(50),
           })
@@ -757,10 +849,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const criteria: Criteria[] = [];
         if (input.fiscal_year)
           criteria.push({ name: "fiscal_year", type: "value", value: input.fiscal_year });
+        if (input.budget_fiscal_year)
+          criteria.push({ name: "budget_fiscal_year", type: "value", value: input.budget_fiscal_year });
         if (input.agency_code)
           criteria.push({ name: "agency_code", type: "value", value: input.agency_code });
-        if (input.budget_code)
-          criteria.push({ name: "budget_code", type: "value", value: input.budget_code });
+        if (input.revenue_category)
+          criteria.push({ name: "revenue_category", type: "value", value: input.revenue_category });
+        if (input.revenue_class)
+          criteria.push({ name: "revenue_class", type: "value", value: input.revenue_class });
+        if (input.revenue_source)
+          criteria.push({ name: "revenue_source", type: "value", value: input.revenue_source });
+        if (input.fund_class)
+          criteria.push({ name: "fund_class", type: "value", value: input.fund_class });
+        if (input.funding_class)
+          criteria.push({ name: "funding_class", type: "value", value: input.funding_class });
 
         const pageSize = Math.min(input.page_size, 1000);
         const result = await callCheckbookApi({
