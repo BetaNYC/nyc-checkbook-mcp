@@ -6,8 +6,8 @@
 # the main workspace's Python tree enforces in engineering-checks.yml (see
 # platform/system/engineering-standards.md in BetaNYC_AI_Workspace).
 #
-# Build-only for now: this repo has no `test` script yet. When test coverage
-# lands, add an `npm test` step to the matrix job below.
+# Runs the build plus the node:test suite in test/ (tool-list parity and
+# criteria-construction unit tests).
 #
 # Node matrix: 20.x and 22.x. package.json declares engines "node >= 18", but
 # Node 18 reached End-of-Life on 2025-04-30, so the matrix covers only
@@ -72,3 +72,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Test
+        run: node --test
