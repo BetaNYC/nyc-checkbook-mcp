@@ -23,7 +23,14 @@ const xmlParser = new XMLParser({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type DataDomain = "Contracts" | "Spending" | "Budget" | "Payroll" | "Revenue";
+export type DataDomain =
+  | "Contracts"
+  | "Contracts_OGE"
+  | "Contracts_NYCHA"
+  | "Spending"
+  | "Budget"
+  | "Payroll"
+  | "Revenue";
 
 type CriteriaType = "value" | "range";
 
@@ -359,6 +366,76 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "industry",
     "pin",
     "received_date",
+  ],
+  // NYCEDC / Other Government Entities (OGE) contracts. Domain token
+  // "Contracts_OGE"; supports registered expense contracts only. Response
+  // column tokens transcribed verbatim from the CheckbookNYC API config
+  // (checkbook_api/src/config/contracts_oge.json, rowElements) — 2026-07-09.
+  Contracts_OGE: [
+    "other_government_entities",
+    "prime_vendor",
+    "contract_id",
+    "version",
+    "year",
+    "parent_contract_id",
+    "purpose",
+    "original_amount",
+    "current_amount",
+    "spent_to_date",
+    "apt_pin",
+    "pin",
+    "contract_type",
+    "award_method",
+    "expense_category",
+    "start_date",
+    "end_date",
+    "document_code",
+    "contract_industry",
+    "commodity_line",
+    "entity_contract_number",
+    "budget_name",
+  ],
+  // NYCHA (New York City Housing Authority) contracts. Domain token
+  // "Contracts_NYCHA"; release/line-item granularity. Response column tokens
+  // transcribed verbatim from the CheckbookNYC API config
+  // (checkbook_api/src/config/contracts_nycha.json, rowElements) — 2026-07-09.
+  Contracts_NYCHA: [
+    "year",
+    "contract_id",
+    "purchase_order_type",
+    "record_type",
+    "number_of_releases",
+    "quantity_ordered",
+    "release_number",
+    "item_description",
+    "item_category",
+    "shipment_number",
+    "start_date",
+    "end_date",
+    "approved_date",
+    "line_current_amount",
+    "line_number",
+    "line_original_amount",
+    "line_invoiced_amount",
+    "release_current_amount",
+    "release_original_amount",
+    "release_invoiced_amount",
+    "contract_current_amount",
+    "contract_original_amount",
+    "contract_invoiced_amount",
+    "purpose",
+    "vendor",
+    "location",
+    "contract_type",
+    "award_method",
+    "grant_name",
+    "expenditure_type",
+    "industry",
+    "funding_source",
+    "responsibility_center",
+    "pin",
+    "program",
+    "project",
   ],
   Spending: [
     "agency",

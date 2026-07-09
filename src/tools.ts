@@ -225,6 +225,111 @@ export function contractsCriteria(input: ContractsSearchInput): Criteria[] {
   return criteria;
 }
 
+// ─── NYCEDC (OGE) + NYCHA contracts (issue #7) ───────────────────────────────
+// Criteria names and defaults transcribed verbatim from the CheckbookNYC API
+// config (checkbook_api/src/config/contracts_oge.json and contracts_nycha.json,
+// searchCriteriaMap / requestParameters) — 2026-07-09. These entities use
+// distinct request-criteria names and response columns from citywide Contracts,
+// so they get purpose-built tools rather than an overloaded search_contracts.
+
+export interface NycedcContractsInput {
+  fiscal_year?: string;
+  vendor_name?: string;
+  contract_id?: string;
+  entity_contract_number?: string;
+  other_government_entities_code?: string;
+  award_method?: string;
+  expense_category?: string;
+  budget_name?: string;
+  commodity_line?: string;
+  pin?: string;
+  amount_min?: number;
+  amount_max?: number;
+  start_date_from?: string;
+  start_date_to?: string;
+  end_date_from?: string;
+  end_date_to?: string;
+}
+
+// The OGE contracts config's requiredCriteria: status=registered, category=expense.
+export function nycedcContractsCriteria(input: NycedcContractsInput): Criteria[] {
+  const criteria: Criteria[] = [
+    { name: "status", type: "value", value: "registered" },
+    { name: "category", type: "value", value: "expense" },
+    ...valueCriteria(input as unknown as Record<string, unknown>, {
+      fiscal_year: "fiscal_year",
+      vendor_name: "prime_vendor",
+      contract_id: "contract_id",
+      entity_contract_number: "entity_contract_number",
+      other_government_entities_code: "other_government_entities_code",
+      award_method: "award_method",
+      expense_category: "expense_category",
+      budget_name: "budget_name",
+      commodity_line: "commodity_line",
+      pin: "pin",
+    }),
+  ];
+  for (const range of [
+    rangeCriterion("current_amount", input.amount_min, input.amount_max, "0", "99999999999"),
+    rangeCriterion("start_date", input.start_date_from, input.start_date_to, "1990-01-01", "2099-12-31"),
+    rangeCriterion("end_date", input.end_date_from, input.end_date_to, "1990-01-01", "2099-12-31"),
+  ]) {
+    if (range) criteria.push(range);
+  }
+  return criteria;
+}
+
+export interface NychaContractsInput {
+  fiscal_year?: string;
+  vendor_name?: string;
+  vendor_code?: string;
+  contract_id?: string;
+  purchase_order_type?: string;
+  responsibility_center?: string;
+  contract_type?: string;
+  award_method?: string;
+  industry?: string;
+  other_government_entities_code?: string;
+  purpose?: string;
+  pin?: string;
+  amount_min?: number;
+  amount_max?: number;
+  start_date_from?: string;
+  start_date_to?: string;
+  end_date_from?: string;
+  end_date_to?: string;
+  approved_date_from?: string;
+  approved_date_to?: string;
+}
+
+export function nychaContractsCriteria(input: NychaContractsInput): Criteria[] {
+  const criteria: Criteria[] = [
+    ...valueCriteria(input as unknown as Record<string, unknown>, {
+      fiscal_year: "fiscal_year",
+      vendor_name: "vendor_name",
+      vendor_code: "vendor_code",
+      contract_id: "contract_id",
+      purchase_order_type: "purchase_order_type",
+      responsibility_center: "responsibility_center",
+      contract_type: "contract_type",
+      award_method: "award_method",
+      industry: "industry",
+      other_government_entities_code: "other_government_entities_code",
+      purpose: "purpose",
+      pin: "pin",
+    }),
+  ];
+  for (const range of [
+    rangeCriterion("current_amount", input.amount_min, input.amount_max, "0", "99999999999"),
+    rangeCriterion("start_date", input.start_date_from, input.start_date_to, "1990-01-01", "2099-12-31"),
+    rangeCriterion("end_date", input.end_date_from, input.end_date_to, "1990-01-01", "2099-12-31"),
+    rangeCriterion("approved_date", input.approved_date_from, input.approved_date_to, "1990-01-01", "2099-12-31"),
+  ]) {
+    if (range) criteria.push(range);
+  }
+  return criteria;
+}
+
 // ─── Tool registration ───────────────────────────────────────────────────────
 
 export function registerTools(server: McpServer): void {
@@ -596,6 +701,115 @@ export function registerTools(server: McpServer): void {
           page,
           page_size,
           { agency_code, fiscal_year }
+        )
+      )
+  );
+
+  server.registerTool(
+    "search_nycedc_contracts",
+    {
+      description:
+        "Search NYCEDC / Other Government Entities (OGE) contracts (Checkbook domain Contracts_OGE). " +
+        "These are separate from citywide contracts and cover economic-development-corporation and " +
+        "other-government-entity agreements. Registered expense contracts only. Filter by fiscal year, " +
+        "vendor, entity contract number, OGE agency code, award method, expense category, budget name, " +
+        "commodity line, amount, and date ranges.",
+      inputSchema: {
+        fiscal_year: fiscalYearSchema,
+        vendor_name: z
+          .string()
+          .optional()
+          .describe("Prime vendor name (first 3 characters matched)"),
+        contract_id: z.string().optional().describe("Contract number"),
+        entity_contract_number: z
+          .string()
+          .optional()
+          .describe("OGE entity contract number"),
+        other_government_entities_code: z
+          .string()
+          .optional()
+          .describe("OGE agency code (identifies the other government entity)"),
+        award_method: z.string().optional().describe("Award method code"),
+        expense_category: z.string().optional().describe("Expense category code"),
+        budget_name: z
+          .string()
+          .optional()
+          .describe("Budget name (first 3 characters matched)"),
+        commodity_line: z.string().optional().describe("Commodity line code (EDC contracts)"),
+        pin: z.string().optional().describe("Contract PIN / tracking number"),
+        amount_min: z.number().optional().describe("Minimum current contract amount"),
+        amount_max: z.number().optional().describe("Maximum current contract amount"),
+        start_date_from: z.string().optional().describe("Start date range begin (YYYY-MM-DD)"),
+        start_date_to: z.string().optional().describe("Start date range end (YYYY-MM-DD)"),
+        end_date_from: z.string().optional().describe("End date range begin (YYYY-MM-DD)"),
+        end_date_to: z.string().optional().describe("End date range end (YYYY-MM-DD)"),
+        page: pageSchema,
+        page_size: pageSizeSchema,
+      },
+    },
+    async (input) =>
+      guard(() =>
+        runSearch(
+          "Contracts_OGE",
+          DEFAULT_COLUMNS["Contracts_OGE"],
+          nycedcContractsCriteria(input),
+          input.page,
+          input.page_size
+        )
+      )
+  );
+
+  server.registerTool(
+    "search_nycha_contracts",
+    {
+      description:
+        "Search NYCHA (New York City Housing Authority) contracts (Checkbook domain Contracts_NYCHA). " +
+        "These are separate from citywide contracts and are reported at release / line-item granularity " +
+        "(purchase-order releases, funding source, program/project). Filter by fiscal year, vendor, " +
+        "purchase-order type, responsibility center, contract type, industry, amount, and date ranges " +
+        "(including approved date).",
+      inputSchema: {
+        fiscal_year: fiscalYearSchema,
+        vendor_name: z.string().optional().describe("Vendor name (contains match)"),
+        vendor_code: z.string().optional().describe("Vendor number / code"),
+        contract_id: z.string().optional().describe("Contract ID"),
+        purchase_order_type: z.string().optional().describe("Purchase order type code"),
+        responsibility_center: z.string().optional().describe("Responsibility center code"),
+        contract_type: z.string().optional().describe("Contract type code"),
+        award_method: z.string().optional().describe("Award method code"),
+        industry: z.string().optional().describe("Industry type code"),
+        other_government_entities_code: z
+          .string()
+          .optional()
+          .describe("NYCHA agency code"),
+        purpose: z.string().optional().describe("Contract purpose (contains match)"),
+        pin: z.string().optional().describe("PO header ID / PIN"),
+        amount_min: z.number().optional().describe("Minimum contract amount"),
+        amount_max: z.number().optional().describe("Maximum contract amount"),
+        start_date_from: z.string().optional().describe("Start date range begin (YYYY-MM-DD)"),
+        start_date_to: z.string().optional().describe("Start date range end (YYYY-MM-DD)"),
+        end_date_from: z.string().optional().describe("End date range begin (YYYY-MM-DD)"),
+        end_date_to: z.string().optional().describe("End date range end (YYYY-MM-DD)"),
+        approved_date_from: z
+          .string()
+          .optional()
+          .describe("Release approved date range begin (YYYY-MM-DD)"),
+        approved_date_to: z
+          .string()
+          .optional()
+          .describe("Release approved date range end (YYYY-MM-DD)"),
+        page: pageSchema,
+        page_size: pageSizeSchema,
+      },
+    },
+    async (input) =>
+      guard(() =>
+        runSearch(
+          "Contracts_NYCHA",
+          DEFAULT_COLUMNS["Contracts_NYCHA"],
+          nychaContractsCriteria(input),
+          input.page,
+          input.page_size
         )
       )
   );

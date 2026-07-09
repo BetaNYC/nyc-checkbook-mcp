@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-09
+
+### Added
+
+- `search_nycedc_contracts`: new tool routing to the `Contracts_OGE` domain — NYCEDC / Other Government Entities contracts (registered expense only). Filters and response columns transcribed from the CheckbookNYC API config (`contracts_oge.json`) (#7).
+- `search_nycha_contracts`: new tool routing to the `Contracts_NYCHA` domain — NYCHA (Housing Authority) contracts at release/line-item granularity (funding source, program/project, responsibility center). Filters and response columns transcribed from the CheckbookNYC API config (`contracts_nycha.json`) (#7).
+- Re-added the `Contracts_OGE` and `Contracts_NYCHA` `DataDomain` members (removed as unused in #3) and their documented default response-column sets, now that tools route to them (#7).
+- `node:test` coverage for the NYCEDC/NYCHA criteria builders, the entity default columns, and entity `type_of_data` routing.
+
+The two entities use request-criteria names and response columns that differ from citywide Contracts and from each other (verified against `checkbook_api/src/config/contracts_oge.json` and `contracts_nycha.json`, 2026-07-09), so they are implemented as purpose-built tools rather than an overloaded `entity` flag on `search_contracts`.
+
 ## [1.2.0] - 2026-07-09
 
 ### Added
@@ -62,7 +73,8 @@ All new fields were confirmed against the documented [Contracts API](https://www
 - Comptroller data-accuracy disclaimer appended to all tool responses.
 - Acknowledgment of the NYC Comptroller and link to the open-source Checkbook NYC repository.
 
-[Unreleased]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.0.0...v1.0.1

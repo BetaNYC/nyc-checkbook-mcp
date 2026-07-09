@@ -10,6 +10,8 @@ import {
   rangeCriterion,
   contractsColumns,
   SUB_VENDOR_COLUMNS,
+  nycedcContractsCriteria,
+  nychaContractsCriteria,
 } from "../dist/tools.js";
 import { DEFAULT_COLUMNS, buildRequestXml } from "../dist/checkbook.js";
 
@@ -22,9 +24,11 @@ const EXPECTED_TOOLS = [
   "search_payroll",
   "search_revenue",
   "get_agency_spending",
+  "search_nycedc_contracts",
+  "search_nycha_contracts",
 ];
 
-test("tools/list exposes the same 8 tool names", async () => {
+test("tools/list exposes the expected tool names", async () => {
   const server = new McpServer({ name: "nyc-checkbook-mcp", version: "1.0.0" });
   registerTools(server);
 
@@ -162,4 +166,95 @@ test("contractsCriteria is unchanged by the column additions (no sub-vendor crit
     { name: "status", type: "value", value: "registered" },
     { name: "category", type: "value", value: "expense" },
   ]);
+});
+
+// ─── NYCEDC (OGE) + NYCHA contract routing (issue #7) ────────────────────────
+// Domain tokens, criteria names, and response columns confirmed against the
+// CheckbookNYC API config (checkbook_api/src/config/contracts_oge.json,
+// contracts_nycha.json) — 2026-07-09.
+
+test("Contracts_OGE default columns are the documented OGE response tokens", () => {
+  for (const col of [
+    "other_government_entities",
+    "prime_vendor",
+    "contract_id",
+    "entity_contract_number",
+    "commodity_line",
+    "budget_name",
+    "expense_category",
+  ]) {
+    assert.ok(DEFAULT_COLUMNS.Contracts_OGE.includes(col), `missing OGE column: ${col}`);
+  }
+  // OGE has no citywide prime_ / release_ tokens.
+  assert.ok(!DEFAULT_COLUMNS.Contracts_OGE.some((c) => c.startsWith("release_")));
+});
+
+test("Contracts_NYCHA default columns are the documented NYCHA response tokens", () => {
+  for (const col of [
+    "release_current_amount",
+    "release_original_amount",
+    "release_invoiced_amount",
+    "contract_current_amount",
+    "funding_source",
+    "responsibility_center",
+    "purchase_order_type",
+    "program",
+    "project",
+    "grant_name",
+  ]) {
+    assert.ok(DEFAULT_COLUMNS.Contracts_NYCHA.includes(col), `missing NYCHA column: ${col}`);
+  }
+});
+
+test("nycedcContractsCriteria sends required registered/expense and maps OGE criteria names", () => {
+  const criteria = nycedcContractsCriteria({
+    fiscal_year: "2024",
+    vendor_name: "ACME",
+    entity_contract_number: "EDC-123",
+    amount_min: 5000,
+  });
+  assert.deepEqual(criteria, [
+    { name: "status", type: "value", value: "registered" },
+    { name: "category", type: "value", value: "expense" },
+    { name: "fiscal_year", type: "value", value: "2024" },
+    // OGE's vendor criterion is prime_vendor.
+    { name: "prime_vendor", type: "value", value: "ACME" },
+    { name: "entity_contract_number", type: "value", value: "EDC-123" },
+    { name: "current_amount", type: "range", start: "5000", end: "99999999999" },
+  ]);
+});
+
+test("nychaContractsCriteria maps NYCHA criteria names and adds approved_date range", () => {
+  const criteria = nychaContractsCriteria({
+    fiscal_year: "2024",
+    vendor_name: "ACME",
+    purchase_order_type: "SA",
+    approved_date_from: "2023-01-01",
+    approved_date_to: "2023-12-31",
+  });
+  assert.deepEqual(criteria, [
+    { name: "fiscal_year", type: "value", value: "2024" },
+    // NYCHA's vendor criterion is vendor_name (not prime_vendor); no status/category.
+    { name: "vendor_name", type: "value", value: "ACME" },
+    { name: "purchase_order_type", type: "value", value: "SA" },
+    { name: "approved_date", type: "range", start: "2023-01-01", end: "2023-12-31" },
+  ]);
+});
+
+test("request XML routes to the documented entity type_of_data tokens", () => {
+  const oge = buildRequestXml({
+    type_of_data: "Contracts_OGE",
+    criteria: nycedcContractsCriteria({ fiscal_year: "2024" }),
+    response_columns: DEFAULT_COLUMNS.Contracts_OGE,
+  });
+  assert.match(oge, /<type_of_data>Contracts_OGE<\/type_of_data>/);
+  assert.match(oge, /<column>entity_contract_number<\/column>/);
+
+  const nycha = buildRequestXml({
+    type_of_data: "Contracts_NYCHA",
+    criteria: nychaContractsCriteria({ fiscal_year: "2024" }),
+    response_columns: DEFAULT_COLUMNS.Contracts_NYCHA,
+  });
+  assert.match(nycha, /<type_of_data>Contracts_NYCHA<\/type_of_data>/);
+  assert.match(nycha, /<column>release_current_amount<\/column>/);
 });

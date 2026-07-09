@@ -28,6 +28,8 @@ Exposes 8 tools over MCP:
 | `search_payroll` | Search payroll records by agency, title, pay frequency, pay date, amount range (no employee names) |
 | `search_revenue` | Search revenue data by agency and fiscal year |
 | `get_agency_spending` | All spending for a specific agency in a fiscal year |
+| `search_nycedc_contracts` | NYCEDC / Other Government Entities (OGE) contracts — separate from citywide |
+| `search_nycha_contracts` | NYCHA (Housing Authority) contracts at release/line-item granularity |
 
 > **Important:** Use `smart_search` when looking up a software product, service name, or keyword. Many NYC contracts are held by resellers — searching by the software vendor's name will return nothing. `smart_search` matches the contract's Purpose field where product names actually appear.
 
@@ -211,6 +213,57 @@ All spending for a specific agency in a fiscal year.
 get_agency_spending("858", "2025")   // OTI/DoITT
 get_agency_spending("040", "2025")   // NYPD
 ```
+
+---
+
+### `search_nycedc_contracts`
+
+Search NYCEDC / Other Government Entities (OGE) contracts (Checkbook domain `Contracts_OGE`), which are separate from citywide contracts. Registered expense contracts only.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `fiscal_year` | string | no | — | e.g. `"2024"` |
+| `vendor_name` | string | no | — | Prime vendor name (first 3 chars matched) |
+| `contract_id` | string | no | — | Contract number |
+| `entity_contract_number` | string | no | — | OGE entity contract number |
+| `other_government_entities_code` | string | no | — | OGE agency code |
+| `award_method` | string | no | — | Award method code |
+| `expense_category` | string | no | — | Expense category code |
+| `budget_name` | string | no | — | Budget name (first 3 chars matched) |
+| `commodity_line` | string | no | — | Commodity line code |
+| `pin` | string | no | — | Contract PIN / tracking number |
+| `amount_min` / `amount_max` | number | no | — | Current contract amount range |
+| `start_date_from` / `start_date_to` | string | no | — | YYYY-MM-DD |
+| `end_date_from` / `end_date_to` | string | no | — | YYYY-MM-DD |
+| `page` | number | no | `1` | Pagination |
+| `page_size` | number | no | `50` | Results per page (max 1000) |
+
+---
+
+### `search_nycha_contracts`
+
+Search NYCHA (New York City Housing Authority) contracts (Checkbook domain `Contracts_NYCHA`), reported at release / line-item granularity (funding source, program/project, responsibility center).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `fiscal_year` | string | no | — | e.g. `"2024"` |
+| `vendor_name` | string | no | — | Vendor name (contains match) |
+| `vendor_code` | string | no | — | Vendor number / code |
+| `contract_id` | string | no | — | Contract ID |
+| `purchase_order_type` | string | no | — | Purchase order type code |
+| `responsibility_center` | string | no | — | Responsibility center code |
+| `contract_type` | string | no | — | Contract type code |
+| `award_method` | string | no | — | Award method code |
+| `industry` | string | no | — | Industry type code |
+| `other_government_entities_code` | string | no | — | NYCHA agency code |
+| `purpose` | string | no | — | Contract purpose (contains match) |
+| `pin` | string | no | — | PO header ID / PIN |
+| `amount_min` / `amount_max` | number | no | — | Contract amount range |
+| `start_date_from` / `start_date_to` | string | no | — | YYYY-MM-DD |
+| `end_date_from` / `end_date_to` | string | no | — | YYYY-MM-DD |
+| `approved_date_from` / `approved_date_to` | string | no | — | Release approved date range (YYYY-MM-DD) |
+| `page` | number | no | `1` | Pagination |
+| `page_size` | number | no | `50` | Results per page (max 1000) |
 
 ---
 
