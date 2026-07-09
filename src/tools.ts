@@ -167,6 +167,46 @@ export interface ContractsSearchInput {
   mwbe_category?: string;
   industry?: string;
   contract_type?: string;
+  include_sub_vendors?: boolean;
+}
+
+// Documented sub-vendor / subcontractor response columns (issue #8), confirmed
+// against https://www.checkbooknyc.com/contract-api (2026-07-09). Opt-in only:
+// appended when include_sub_vendors is set on a registered-contracts search.
+// These use the registered/expense column-token naming, so they are not applied
+// to the pending column set (which uses a different token scheme).
+export const SUB_VENDOR_COLUMNS: string[] = [
+  "sub_vendor",
+  "sub_vendor_mwbe_category",
+  "sub_contract_purpose",
+  "sub_contract_status",
+  "sub_contract_current_amount",
+  "sub_contract_original_amount",
+  "sub_vendor_paid_to_date",
+  "sub_contract_registration_date",
+  "sub_contract_industry",
+  "sub_woman_owned_business",
+  "sub_emerging_business",
+];
+
+/**
+ * Select the response columns for a contracts search.
+ *
+ * Base set is DEFAULT_COLUMNS.Contracts (registered) or Contracts_pending.
+ * Sub-vendor columns are appended only for registered contracts when
+ * include_sub_vendors is requested — the pending column set uses a different,
+ * incompatible token scheme.
+ */
+export function contractsColumns(
+  status: "registered" | "pending",
+  includeSubVendors: boolean
+): string[] {
+  const base =
+    status === "pending" ? DEFAULT_COLUMNS["Contracts_pending"] : DEFAULT_COLUMNS["Contracts"];
+  if (includeSubVendors && status !== "pending") {
+    return [...base, ...SUB_VENDOR_COLUMNS];
+  }
+  return base;
 }
 
 export function contractsCriteria(input: ContractsSearchInput): Criteria[] {
@@ -286,6 +326,15 @@ export function registerTools(server: McpServer): void {
         mwbe_category: z.string().optional().describe("M/WBE category code"),
         industry: z.string().optional().describe("Industry code"),
         contract_type: z.string().optional().describe("Contract type code"),
+        include_sub_vendors: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            "Include sub-vendor / subcontractor detail columns (sub_vendor, " +
+              "sub_vendor_mwbe_category, sub_contract_current_amount, etc.) in the response. " +
+              "Applies to registered contracts only; ignored for status='pending'."
+          ),
         page: z.number().optional().default(1).describe("Page number for pagination (default: 1)"),
         page_size: pageSizeSchema,
       },
@@ -294,7 +343,7 @@ export function registerTools(server: McpServer): void {
       guard(() =>
         runSearch(
           "Contracts",
-          DEFAULT_COLUMNS[input.status === "pending" ? "Contracts_pending" : "Contracts"],
+          contractsColumns(input.status, input.include_sub_vendors),
           contractsCriteria(input),
           input.page,
           input.page_size

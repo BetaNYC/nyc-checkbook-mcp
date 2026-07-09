@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-09
+
+### Added
+
+- `search_contracts`: new `include_sub_vendors` parameter (boolean, default `false`). When set on a registered-contracts search, the response is enriched with the documented sub-vendor / subcontractor columns — `sub_vendor`, `sub_vendor_mwbe_category`, `sub_contract_purpose`, `sub_contract_status`, `sub_contract_current_amount`, `sub_contract_original_amount`, `sub_vendor_paid_to_date`, `sub_contract_registration_date`, `sub_contract_industry`, `sub_woman_owned_business`, `sub_emerging_business` (#8).
+- Contracts default response columns: WBE/EBE flags `prime_woman_owned_business` and `prime_emerging_business` (#9).
+- Contracts default response columns: lineage/registration fields `mocs_registered`, `contract_class`, `parent_contract_id`, `prime_contract_version` (#10).
+- `node:test` coverage for the new column selection (`contractsColumns`), the sub-vendor column set, and the enriched default Contracts columns.
+
+All new fields were confirmed against the documented [Contracts API](https://www.checkbooknyc.com/contract-api) token tables (2026-07-09). The `contract_includes_sub_vendors` filter (#8) and the #10 request filters are intentionally **not** added: their accepted value enumeration / domain applicability could not be confirmed from the docs, so per the project's build-against-docs rule they are deferred rather than guessed. `registration_date` (#6) remains unimplemented pending confirmation of the exact prime-expense column token.
+
+### Changed
+
+- Internal architecture: migrated from the low-level `Server` API to `McpServer.registerTool`, with zod raw shapes as the single source of truth for each tool's input schema (the SDK now generates the `tools/list` JSON Schema). Tool handlers share a `runSearch` / `valueCriteria` / `rangeCriterion` path in the new `src/tools.ts`; `src/index.ts` is now an 11-line entry point. All tool names, descriptions, and the API contract are unchanged from a client's perspective (#3).
+
 ## [1.1.0] - 2026-07-06
 
 ### Added
@@ -47,7 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comptroller data-accuracy disclaimer appended to all tool responses.
 - Acknowledgment of the NYC Comptroller and link to the open-source Checkbook NYC repository.
 
-[Unreleased]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/releases/tag/v1.0.0

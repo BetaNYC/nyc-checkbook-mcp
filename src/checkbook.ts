@@ -335,6 +335,15 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "prime_contract_industry",
     "prime_contract_pin",
     "year",
+    // Added v1.2.0 — documented Contracts response columns confirmed against
+    // https://www.checkbooknyc.com/contract-api (2026-07-09). WBE/EBE flags
+    // (issue #9) and low-priority lineage/registration columns (issue #10).
+    "prime_woman_owned_business",
+    "prime_emerging_business",
+    "mocs_registered",
+    "contract_class",
+    "parent_contract_id",
+    "prime_contract_version",
   ],
   Contracts_pending: [
     "contract_id",
