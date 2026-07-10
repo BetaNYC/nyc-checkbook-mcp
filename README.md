@@ -77,13 +77,17 @@ Search registered or pending NYC contracts with structured filters.
 | `mwbe_category` | string | no | — | M/WBE category code |
 | `industry` | string | no | — | Industry code |
 | `contract_type` | string | no | — | Contract type code |
+| `include_sub_vendors` | boolean | no | `false` | Append sub-vendor / subcontractor detail columns (`sub_vendor`, `sub_vendor_mwbe_category`, `sub_contract_current_amount`, …) to the response. Registered contracts only. |
 | `page` | number | no | `1` | Pagination |
 | `page_size` | number | no | `50` | Results per page (max 1000) |
+
+Registered-contract responses include documented WBE/EBE flags (`prime_woman_owned_business`, `prime_emerging_business`) and lineage/registration columns (`mocs_registered`, `contract_class`, `parent_contract_id`, `prime_contract_version`) in addition to the core fields.
 
 ```
 search_contracts(agency_code="858", fiscal_year="2024")
 search_contracts(vendor_name="SHI International", status="registered")
 search_contracts(amount_min=100000, amount_max=500000, mwbe_category="3")
+search_contracts(agency_code="858", fiscal_year="2024", include_sub_vendors=true)
 ```
 
 ---

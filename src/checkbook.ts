@@ -7,7 +7,7 @@
  * Docs: https://www.checkbooknyc.com/data-feeds/api
  */
 
-import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import { XMLParser } from "fast-xml-parser";
 
 const API_ENDPOINT = "https://www.checkbooknyc.com/api";
 const SMART_SEARCH_ENDPOINT = "https://www.checkbooknyc.com/smart_search/citywide";
@@ -21,26 +21,11 @@ const xmlParser = new XMLParser({
   trimValues: true,
 });
 
-const xmlBuilder = new XMLBuilder({
-  ignoreAttributes: false,
-  format: false,
-});
-
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type DataDomain =
-  | "Contracts"
-  | "Contracts_OGE"
-  | "Contracts_NYCHA"
-  | "Spending"
-  | "Spending_OGE"
-  | "Spending_NYCHA"
-  | "Budget"
-  | "Payroll"
-  | "Payroll_NYCHA"
-  | "Revenue";
+export type DataDomain = "Contracts" | "Spending" | "Budget" | "Payroll" | "Revenue";
 
-export type CriteriaType = "value" | "range";
+type CriteriaType = "value" | "range";
 
 export interface Criteria {
   name: string;
@@ -50,7 +35,7 @@ export interface Criteria {
   end?: string;
 }
 
-export interface ApiRequest {
+interface ApiRequest {
   type_of_data: DataDomain;
   records_from?: number;
   max_records?: number;
@@ -58,7 +43,7 @@ export interface ApiRequest {
   response_columns?: string[];
 }
 
-export interface ApiResponse {
+interface ApiResponse {
   success: boolean;
   total_records: number;
   records: Record<string, unknown>[];
@@ -213,7 +198,7 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiResponse> {
 
 // ─── Smart search (web endpoint) ─────────────────────────────────────────────
 
-export interface SmartSearchResult {
+interface SmartSearchResult {
   type: string;
   fields: Record<string, string>;
 }
@@ -350,6 +335,15 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "prime_contract_industry",
     "prime_contract_pin",
     "year",
+    // Added v1.2.0 — documented Contracts response columns confirmed against
+    // https://www.checkbooknyc.com/contract-api (2026-07-09). WBE/EBE flags
+    // (issue #9) and low-priority lineage/registration columns (issue #10).
+    "prime_woman_owned_business",
+    "prime_emerging_business",
+    "mocs_registered",
+    "contract_class",
+    "parent_contract_id",
+    "prime_contract_version",
   ],
   Contracts_pending: [
     "contract_id",
