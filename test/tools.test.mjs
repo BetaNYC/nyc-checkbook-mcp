@@ -168,6 +168,125 @@ test("contractsCriteria is unchanged by the column additions (no sub-vendor crit
   ]);
 });
 
+// ─── Config-confirmed Contracts field gaps (issues #6 / #8 / #10) ────────────
+// Tokens confirmed against the CheckbookNYC API config
+// (NYCComptroller/Checkbook: source/web/modules/custom/checkbook_api/src/config/contracts.json),
+// which is the authoritative token source. No live API calls.
+
+test("#6 — prime_contract_registration_date is in the default Contracts columns", () => {
+  // contracts_active_expense.displayConfiguration.xml.overrideColumns + rowElements.
+  assert.ok(DEFAULT_COLUMNS.Contracts.includes("prime_contract_registration_date"));
+  // Still no duplicates in the default column set.
+  assert.equal(new Set(DEFAULT_COLUMNS.Contracts).size, DEFAULT_COLUMNS.Contracts.length);
+});
+
+test("#6 — registration_date range criterion is added for registered contracts", () => {
+  // contracts_active_expense.requestParameters.registration_date = range/date.
+  const criteria = contractsCriteria({
+    status: "registered",
+    category: "expense",
+    registration_date_from: "2023-01-01",
+    registration_date_to: "2023-12-31",
+  });
+  assert.deepEqual(
+    criteria.find((c) => c.name === "registration_date"),
+    { name: "registration_date", type: "range", start: "2023-01-01", end: "2023-12-31" }
+  );
+});
+
+test("#6/#10 — registration_date is not sent for pending; received_date is not sent for registered", () => {
+  // Pending config declares received_date, not registration_date (contracts_pending.requestParameters).
+  const pending = contractsCriteria({
+    status: "pending",
+    category: "expense",
+    registration_date_from: "2023-01-01",
+    received_date_from: "2024-06-01",
+  });
+  assert.equal(pending.find((c) => c.name === "registration_date"), undefined);
+  assert.deepEqual(
+    pending.find((c) => c.name === "received_date"),
+    { name: "received_date", type: "range", start: "2024-06-01", end: "2099-12-31" }
+  );
+
+  // Registered config declares registration_date, not received_date.
+  const registered = contractsCriteria({
+    status: "registered",
+    category: "expense",
+    received_date_from: "2024-06-01",
+  });
+  assert.equal(registered.find((c) => c.name === "received_date"), undefined);
+});
+
+test("#8 — contract_includes_sub_vendors value criterion is passed through for registered only", () => {
+  // requestParameters.contract_includes_sub_vendors = {valueType:"value",dataType:"text",maxLength:"2"}.
+  // The accepted code enumeration is not published in the config, so the raw
+  // caller value is passed through verbatim (this test asserts wiring, not a valid code).
+  const registered = contractsCriteria({
+    status: "registered",
+    category: "expense",
+    contract_includes_sub_vendors: "01",
+  });
+  assert.deepEqual(
+    registered.find((c) => c.name === "contract_includes_sub_vendors"),
+    { name: "contract_includes_sub_vendors", type: "value", value: "01" }
+  );
+
+  // Pending config does not declare contract_includes_sub_vendors — must not be sent.
+  const pending = contractsCriteria({
+    status: "pending",
+    category: "expense",
+    contract_includes_sub_vendors: "01",
+  });
+  assert.equal(pending.find((c) => c.name === "contract_includes_sub_vendors"), undefined);
+});
+
+test("#10 — purpose and pin are universal value criteria", () => {
+  const criteria = contractsCriteria({
+    status: "registered",
+    category: "expense",
+    purpose: "consulting",
+    pin: "20231234",
+  });
+  assert.deepEqual(criteria.find((c) => c.name === "purpose"), {
+    name: "purpose",
+    type: "value",
+    value: "consulting",
+  });
+  assert.deepEqual(criteria.find((c) => c.name === "pin"), {
+    name: "pin",
+    type: "value",
+    value: "20231234",
+  });
+});
+
+test("request XML emits the config-confirmed criteria and registration_date column", () => {
+  const xml = buildRequestXml({
+    type_of_data: "Contracts",
+    criteria: contractsCriteria({
+      status: "registered",
+      category: "expense",
+      registration_date_from: "2023-01-01",
+      contract_includes_sub_vendors: "01",
+      pin: "20231234",
+    }),
+    response_columns: DEFAULT_COLUMNS.Contracts,
+  });
+  assert.match(xml, /<name>registration_date<\/name><type>range<\/type>/);
+  assert.match(xml, /<name>contract_includes_sub_vendors<\/name><type>value<\/type>/);
+  assert.match(xml, /<name>pin<\/name>/);
+  assert.match(xml, /<column>prime_contract_registration_date<\/column>/);
+
+  const pendingXml = buildRequestXml({
+    type_of_data: "Contracts",
+    criteria: contractsCriteria({
+      status: "pending",
+      category: "expense",
+      received_date_from: "2024-06-01",
+    }),
+  });
+  assert.match(pendingXml, /<name>received_date<\/name><type>range<\/type>/);
+});
+
 // ─── NYCEDC (OGE) + NYCHA contract routing (issue #7) ────────────────────────
 // Domain tokens, criteria names, and response columns confirmed against the
 // CheckbookNYC API config (checkbook_api/src/config/contracts_oge.json,

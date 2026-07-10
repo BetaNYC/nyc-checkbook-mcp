@@ -137,6 +137,8 @@ const agencyCodeSchema = z.string().optional().describe("3-digit agency code");
 
 // ─── Contracts criteria (exported for tests) ─────────────────────────────────
 
+// Universal value criteria — present in every citywide Contracts config
+// (registered expense/revenue/all + pending) per checkbook_api/src/config/contracts.json.
 const CONTRACT_VALUE_FIELDS: Record<string, string> = {
   fiscal_year: "fiscal_year",
   agency_code: "agency_code",
@@ -147,6 +149,12 @@ const CONTRACT_VALUE_FIELDS: Record<string, string> = {
   mwbe_category: "mwbe_category",
   industry: "industry",
   contract_type: "contract_type",
+  // Added from config (issue #10). Confirmed as request params in every
+  // contracts config (contracts_active_expense/revenue/all + contracts_pending
+  // requestParameters). `purpose` is a server-side "contains" match; `pin` maps
+  // to the contract tracking number / prime PIN.
+  purpose: "purpose",
+  pin: "pin",
 };
 
 export interface ContractsSearchInput {
@@ -167,6 +175,16 @@ export interface ContractsSearchInput {
   mwbe_category?: string;
   industry?: string;
   contract_type?: string;
+  purpose?: string;
+  pin?: string;
+  // Registered-only date filter (issue #6).
+  registration_date_from?: string;
+  registration_date_to?: string;
+  // Registered-only sub-vendor status-code filter (issue #8).
+  contract_includes_sub_vendors?: string;
+  // Pending-only date filter (issue #10).
+  received_date_from?: string;
+  received_date_to?: string;
   include_sub_vendors?: boolean;
 }
 
@@ -222,6 +240,54 @@ export function contractsCriteria(input: ContractsSearchInput): Criteria[] {
   ]) {
     if (range) criteria.push(range);
   }
+
+  // Status-conditional criteria. The registered and pending contracts configs
+  // expose different date/status request parameters (contracts.json): the
+  // registered configs (contracts_active_expense/revenue/all) have
+  // `registration_date` (range) and `contract_includes_sub_vendors` (value);
+  // the pending config (contracts_pending) has `received_date` (range) instead.
+  // Sending a param to the config that does not declare it would be rejected,
+  // so each is gated to the status whose config declares it.
+  if (input.status === "registered") {
+    // issue #6 — registered prime-expense registration_date range criterion.
+    const regDate = rangeCriterion(
+      "registration_date",
+      input.registration_date_from,
+      input.registration_date_to,
+      "1990-01-01",
+      "2099-12-31"
+    );
+    if (regDate) criteria.push(regDate);
+
+    // issue #8 — sub-vendor status-code filter. The criterion name/type/maxLength
+    // is confirmed (contracts.json contracts_active_expense.requestParameters:
+    // {valueType:"value",dataType:"text",maxLength:"2"}); the accepted code
+    // enumeration is NOT published in the config (no allowedValues), so the raw
+    // caller-supplied code is passed through verbatim rather than validated.
+    if (
+      input.contract_includes_sub_vendors !== undefined &&
+      input.contract_includes_sub_vendors !== ""
+    ) {
+      criteria.push({
+        name: "contract_includes_sub_vendors",
+        type: "value",
+        value: String(input.contract_includes_sub_vendors),
+      });
+    }
+  } else if (input.status === "pending") {
+    // issue #10 — received_date is a pending-contract concept only
+    // (contracts_pending.requestParameters.received_date, range/date); registered
+    // contracts use registration_date instead.
+    const recDate = rangeCriterion(
+      "received_date",
+      input.received_date_from,
+      input.received_date_to,
+      "1990-01-01",
+      "2099-12-31"
+    );
+    if (recDate) criteria.push(recDate);
+  }
+
   return criteria;
 }
 
@@ -431,6 +497,43 @@ export function registerTools(server: McpServer): void {
         mwbe_category: z.string().optional().describe("M/WBE category code"),
         industry: z.string().optional().describe("Industry code"),
         contract_type: z.string().optional().describe("Contract type code"),
+        purpose: z
+          .string()
+          .optional()
+          .describe("Contract purpose keyword (server-side 'contains' match)"),
+        pin: z.string().optional().describe("Contract PIN / tracking number"),
+        registration_date_from: z
+          .string()
+          .optional()
+          .describe(
+            "Registration date range begin (YYYY-MM-DD). Registered contracts only; ignored for status='pending'."
+          ),
+        registration_date_to: z
+          .string()
+          .optional()
+          .describe(
+            "Registration date range end (YYYY-MM-DD). Registered contracts only; ignored for status='pending'."
+          ),
+        received_date_from: z
+          .string()
+          .optional()
+          .describe(
+            "Received date range begin (YYYY-MM-DD). Pending contracts only; ignored for status='registered' (which use registration_date instead)."
+          ),
+        received_date_to: z
+          .string()
+          .optional()
+          .describe(
+            "Received date range end (YYYY-MM-DD). Pending contracts only; ignored for status='registered'."
+          ),
+        contract_includes_sub_vendors: z
+          .string()
+          .optional()
+          .describe(
+            "Advanced: sub-vendor status filter — a 2-character code (API criterion 'contract_includes_sub_vendors'). " +
+              "Registered contracts only. The accepted code values are not enumerated in the Comptroller's published " +
+              "API config, so supply the raw code as used on checkbooknyc.com; it is passed through verbatim."
+          ),
         include_sub_vendors: z
           .boolean()
           .optional()

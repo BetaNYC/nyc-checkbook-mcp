@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+Contracts field gaps deferred from #3/#13, now confirmed against the CheckbookNYC
+API config (`NYCComptroller/Checkbook`:
+`source/web/modules/custom/checkbook_api/src/config/contracts.json`) — the
+authoritative token source, read as published open-source config (no live API calls).
+
+- **#6 registration_date** — `search_contracts` gains `registration_date_from` /
+  `registration_date_to` (registered contracts only), which send the `registration_date`
+  range criterion, and the prime-expense response column `prime_contract_registration_date`
+  is now in the default Contracts column set. Confirmed against `contracts_active_expense`:
+  `requestParameters.registration_date` (`{valueType:"range",dataType:"date",format:"YYYY-MM-DD"}`)
+  and `displayConfiguration.xml.overrideColumns`/`rowElements` (`prime_contract_registration_date`).
+- **#8 contract_includes_sub_vendors (filter, remainder)** — `search_contracts` gains an
+  optional `contract_includes_sub_vendors` filter (registered contracts only), sent as a
+  `value` criterion. The criterion name/type/max-length are confirmed against
+  `contracts_active_expense.requestParameters.contract_includes_sub_vendors`
+  (`{valueType:"value",dataType:"text",maxLength:"2"}`). The accepted 2-character code
+  **enumeration is not published in the config** (no `allowedValues`), so the caller-supplied
+  code is passed through verbatim and is documented as such — not guessed. (The sub-vendor
+  response *columns* already shipped in #3/v1.2.0.)
+- **#10 received_date + request filters (remainder)** — the `received_date` applicability
+  question is resolved: `received_date` is a **pending-contract** concept only
+  (`contracts_pending.requestParameters.received_date`, range/date; absent from every
+  registered config, which use `registration_date` instead). `search_contracts` gains
+  `received_date_from` / `received_date_to` (pending contracts only) sending the
+  `received_date` range criterion, plus the universal value filters `purpose`
+  (server-side "contains" match) and `pin`, both confirmed as request parameters in every
+  contracts config.
+- `node:test` coverage for the new criteria builders (registration_date/received_date status
+  gating, contract_includes_sub_vendors pass-through, purpose/pin), the new default column,
+  and request-XML emission. All fixture/structure-based; no network.
+
+Still deferred (not derivable from the config, per the build-against-docs rule): the exact
+value enumeration for `contract_includes_sub_vendors` and `sub_contract_status` (config
+declares them as `text`/max-2 with no `allowedValues`). Additional confirmed-but-not-added
+request params (`spent_to_date` range, `expense_category`, `apt_pin`) and niche registered
+response columns (`prime_contract_apt_pin`, `prime_oca_number`, `percent_covid_spending`,
+`percent_other_spending`, `vendor_record_type`) were left out of this pass to keep the
+`search_contracts` surface focused; all are present in `contracts.json` if wanted later.
+
 ## [1.3.0] - 2026-07-09
 
 ### Added

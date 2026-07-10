@@ -336,6 +336,11 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "prime_vendor_spent_to_date",
     "prime_contract_start_date",
     "prime_contract_end_date",
+    // Prime-contract registration date (issue #6). Public response-column token
+    // confirmed against the CheckbookNYC API config
+    // (checkbook_api/src/config/contracts.json → contracts_active_expense,
+    // displayConfiguration.xml.overrideColumns + rowElements: "prime_contract_registration_date") — 2026-07-09.
+    "prime_contract_registration_date",
     "prime_contract_award_method",
     "prime_contract_type",
     "prime_vendor_mwbe_category",
