@@ -267,6 +267,22 @@ Search NYCHA (New York City Housing Authority) contracts (Checkbook domain `Cont
 
 ---
 
+## Example queries
+
+Natural-language questions this MCP can answer today, by persona:
+
+- **Watchdog/journalist:** "How much did the city actually pay a given vendor in FY2024, and through which agencies?" — `search_spending` filters payment records by payee name, agency, fiscal year, date range, and amount.
+
+- **Accountability researcher:** "Which registered expense contracts over $500,000 did the Department of Transportation hold in FY2025?" — `search_contracts` filters by agency, fiscal year, amount range, status, industry, and M/WBE category (use `get_contract` for full detail on one contract by ID).
+
+- **Budget analyst:** "What was the NYPD's adopted budget for FY2026, broken down by budget code?" — `search_budget` returns budget lines by agency, department, budget code, and fiscal year (`get_agency_spending` gives the companion "what did they actually spend" view).
+
+- **Labor/compensation reporter:** "What did FDNY paramedics earn in FY2026, and which pay frequencies show the most supplemental pay?" — `search_payroll` filters by agency, job title, pay frequency, pay date, and amount range.
+
+- **Fiscal-policy researcher:** "How much revenue did the Department of Finance collect in FY2025, grouped by revenue category?" — `search_revenue` filters by agency, revenue category/class/source, fund class, and fiscal year.
+
+---
+
 ## Common agency codes
 
 | Code | Agency |
@@ -347,10 +363,42 @@ Or if installed globally:
 
 ---
 
+## About BetaNYC
+
+This project is built and maintained by [BetaNYC](https://beta.nyc), New York's
+civic technology and open-data community. We work to improve lives in New York
+through civic design, technology, data, and public-interest technology.
+
+**Come do civic tech with us.** We run public events, meetups, and hands-on
+data classes — including [NYC School of Data](https://www.schoolofdata.nyc/)
+and [CityCamp NYC](https://citycamp.nyc), and we host frequent civic-tech gatherings. See what's coming up on our
+[events calendar](https://www.beta.nyc/events/).
+
+**Sustain this work.** These MCP servers are free and open source. To help keep this work going and find BetaNYC's
+tools, please consider [donating and becoming a Beta
+Builder](https://beta.nyc/donate).
+
+## Building on this? Tell us!
+
+If you build something with this project, we'd love to hear about it. We can help other New Yorkers find it. BetaNYC publishes a weekly newsletter,
+*This Week in NYC's Civic Technology and Open Data*.
+
+- **[Subscribe to the newsletter](https://beta.nyc/newsletter)** to keep up with
+  NYC civic tech, open data, and public-interest technology.
+- **Built something, or found a story worth sharing?** [Submit a link for the
+  newsletter](https://www.beta.nyc/newsletter-inbox/) and we'll consider it for
+  an upcoming issue.
+
 ## Related BetaNYC MCP servers
 
-- [nyc-council-mcp](https://github.com/BetaNYC/nyc-council-mcp) — NYC Council legislative data via Legistar
-- [nyc-record-mcp](https://github.com/BetaNYC/nyc-record-mcp) — NYC City Record procurement notices
+BetaNYC maintains a suite of open-source MCP servers for NYC and NYS civic data.
+See the full directory, with install details for each, at
+**[beta.nyc/ai-tools](https://beta.nyc/ai-tools)**.
+
+This server pairs directly with:
+
+- **[nyc-budget-mcp](https://github.com/BetaNYC/New-York-City-Budget)**: trace agency spending and contracts back to the Council discretionary awards (Schedule C) that funded them.
+- **[nyc-record-mcp](https://github.com/BetaNYC/nyc-record-mcp)**: connect a registered contract to the procurement solicitation and award notice that preceded it.
 
 ---
 
