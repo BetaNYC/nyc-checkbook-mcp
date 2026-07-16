@@ -137,10 +137,19 @@ const agencyCodeSchema = z.string().optional().describe("3-digit agency code");
 
 // ─── Contracts criteria (exported for tests) ─────────────────────────────────
 
+// Request-parameter names accepted by the citywide Registered Contracts domain.
+// Transcribed from the CheckbookNYC API config requestParameters for
+// contracts_active_expense / contracts_active_expense_all_years
+// (NYCComptroller/Checkbook, source/.../checkbook_api/src/config/contracts.json)
+// and corroborated by the live API's own valid-values error (issue #16,
+// 2026-07-16). CRITICAL: there is NO vendor-*name* request parameter — the
+// domain filters vendors only by "vendor_code". "prime_vendor" /
+// "associated_prime_vendor" are internal column mappings, NOT accepted filters,
+// so vendor_name must not be mapped to a request criterion here. Vendor-name
+// lookups are handled explicitly in the search_contracts handler.
 const CONTRACT_VALUE_FIELDS: Record<string, string> = {
   fiscal_year: "fiscal_year",
   agency_code: "agency_code",
-  vendor_name: "prime_vendor",
   vendor_code: "vendor_code",
   contract_id: "contract_id",
   award_method: "award_method",
@@ -148,6 +157,24 @@ const CONTRACT_VALUE_FIELDS: Record<string, string> = {
   industry: "industry",
   contract_type: "contract_type",
 };
+
+/**
+ * Guidance returned when a caller filters contracts by vendor *name*.
+ *
+ * The Checkbook NYC contracts XML API has no vendor-name request parameter and
+ * no vendor-directory domain to resolve a name → vendor_code (verified against
+ * the API config: only budget/contracts/payroll/revenue/spending domains
+ * exist). Rather than silently drop the filter (which would return unrelated
+ * contracts) or send an invalid param (which yields an opaque 1101 error), the
+ * handler stops and explains the supported paths.
+ */
+export const VENDOR_NAME_UNSUPPORTED_MESSAGE =
+  "search_contracts cannot filter by vendor name: the Checkbook NYC contracts " +
+  "API filters vendors only by 'vendor_code', and offers no name→code lookup. " +
+  "Options: (1) pass vendor_code if you know it; (2) use search_spending with " +
+  "payee_name to find checks paid to a vendor by name; (3) use smart_search " +
+  "for a name/keyword search (note: the smart_search web endpoint is currently " +
+  "behind a WAF and is often unavailable server-side).";
 
 export interface ContractsSearchInput {
   status: "registered" | "pending";
@@ -381,9 +408,10 @@ export function registerTools(server: McpServer): void {
     {
       description:
         "Search NYC registered and pending contracts with structured filters. " +
-        "Filter by vendor name, agency, contract ID, date range, amount range, industry, MWBE category, and more. " +
-        "NOTE: vendor name must match the prime vendor (reseller), not the software maker. " +
-        "Use smart_search to find contracts by product or software name.",
+        "Filter by agency, vendor_code, contract ID, date range, amount range, industry, MWBE category, and more. " +
+        "NOTE: the contracts API has NO vendor-name filter — vendors are filtered only by vendor_code. " +
+        "To find contracts by vendor NAME, use search_spending (payee_name) or smart_search. " +
+        "Use smart_search to find contracts by product or software name (many contracts are held by resellers).",
       inputSchema: {
         status: z
           .enum(["registered", "pending"])
@@ -403,8 +431,13 @@ export function registerTools(server: McpServer): void {
         vendor_name: z
           .string()
           .optional()
-          .describe("Prime vendor name — first 3 characters are used for matching"),
-        vendor_code: z.string().optional().describe("Vendor identification code"),
+          .describe(
+            "NOT SUPPORTED as a contracts filter — the Checkbook API has no vendor-name " +
+              "parameter and no name→code lookup. Supplying this returns actionable guidance " +
+              "(use vendor_code, or search_spending/smart_search for name search). " +
+              "Prefer vendor_code."
+          ),
+        vendor_code: z.string().optional().describe("Vendor identification code (the only vendor filter for contracts)"),
         contract_id: z
           .string()
           .optional()
@@ -445,15 +478,18 @@ export function registerTools(server: McpServer): void {
       },
     },
     async (input) =>
-      guard(() =>
-        runSearch(
+      guard(() => {
+        if (input.vendor_name) {
+          throw new Error(VENDOR_NAME_UNSUPPORTED_MESSAGE);
+        }
+        return runSearch(
           "Contracts",
           contractsColumns(input.status, input.include_sub_vendors),
           contractsCriteria(input),
           input.page,
           input.page_size
-        )
-      )
+        );
+      })
   );
 
   server.registerTool(

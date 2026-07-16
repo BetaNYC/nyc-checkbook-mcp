@@ -10,10 +10,42 @@ import {
   rangeCriterion,
   contractsColumns,
   SUB_VENDOR_COLUMNS,
+  VENDOR_NAME_UNSUPPORTED_MESSAGE,
   nycedcContractsCriteria,
   nychaContractsCriteria,
 } from "../dist/tools.js";
 import { DEFAULT_COLUMNS, buildRequestXml } from "../dist/checkbook.js";
+
+// Request parameters the citywide Registered Contracts domain actually accepts,
+// transcribed from the CheckbookNYC API config requestParameters for
+// contracts_active_expense (superset incl. fiscal_year) and
+// contracts_active_expense_all_years, and corroborated by the live API's own
+// valid-values error (issue #16, 2026-07-16). Notably ABSENT: any vendor-name
+// param (prime_vendor / associated_prime_vendor) — vendors filter by vendor_code.
+const VALID_CONTRACTS_CRITERIA = new Set([
+  "fiscal_year",
+  "agency_code",
+  "vendor_code",
+  "current_amount",
+  "spent_to_date",
+  "award_method",
+  "expense_category",
+  "contract_id",
+  "conditional_category",
+  "contract_type",
+  "start_date",
+  "end_date",
+  "registration_date",
+  "status",
+  "category",
+  "purpose",
+  "pin",
+  "apt_pin",
+  "mwbe_category",
+  "industry",
+  "sub_contract_status",
+  "contract_includes_sub_vendors",
+]);
 
 const EXPECTED_TOOLS = [
   "smart_search",
@@ -58,12 +90,12 @@ test("tools/list exposes the expected tool names", async () => {
   await server.close();
 });
 
-test("contractsCriteria builds value + range criteria like the old handler", () => {
+test("contractsCriteria builds value + range criteria (vendor filtered by vendor_code)", () => {
   const criteria = contractsCriteria({
     status: "registered",
     category: "expense",
     fiscal_year: "2024",
-    vendor_name: "ACME",
+    vendor_code: "ACME123",
     amount_min: 1000,
     start_date_from: "2023-01-01",
   });
@@ -72,10 +104,132 @@ test("contractsCriteria builds value + range criteria like the old handler", () 
     { name: "status", type: "value", value: "registered" },
     { name: "category", type: "value", value: "expense" },
     { name: "fiscal_year", type: "value", value: "2024" },
-    { name: "prime_vendor", type: "value", value: "ACME" },
+    { name: "vendor_code", type: "value", value: "ACME123" },
     { name: "current_amount", type: "range", start: "1000", end: "99999999999" },
     { name: "start_date", type: "range", start: "2023-01-01", end: "2099-12-31" },
   ]);
+});
+
+// ─── issue #16: vendor-name request-param + 'year' response-column bug ─────────
+
+test("contractsCriteria never emits an invalid 'prime_vendor' criterion for vendor_name (#16)", () => {
+  // The historic bug mapped vendor_name → request param prime_vendor, which the
+  // Registered Contracts domain rejects. vendor_name must NOT become a criterion.
+  const criteria = contractsCriteria({
+    status: "registered",
+    category: "expense",
+    vendor_name: "Association of Community Employment",
+  });
+  assert.ok(
+    !criteria.some((c) => c.name === "prime_vendor"),
+    "prime_vendor must never be sent as a request criterion"
+  );
+  assert.ok(
+    !criteria.some((c) => c.name === "vendor_name" || c.name === "associated_prime_vendor"),
+    "no vendor-name request criterion of any spelling"
+  );
+  // vendor_name contributes nothing; only status + category remain.
+  assert.deepEqual(criteria, [
+    { name: "status", type: "value", value: "registered" },
+    { name: "category", type: "value", value: "expense" },
+  ]);
+});
+
+test("every criterion contractsCriteria emits is a documented Registered Contracts request param (#16)", () => {
+  // Exercise every value + range field at once; assert each emitted name is one
+  // the domain actually accepts. This guard is what would have caught prime_vendor.
+  const criteria = contractsCriteria({
+    status: "registered",
+    category: "all",
+    fiscal_year: "2024",
+    agency_code: "858",
+    vendor_name: "ACME",
+    vendor_code: "V123",
+    contract_id: "CT1",
+    award_method: "01",
+    mwbe_category: "3",
+    industry: "IT",
+    contract_type: "MMA",
+    amount_min: 1000,
+    amount_max: 5000,
+    start_date_from: "2023-01-01",
+    end_date_to: "2025-01-01",
+  });
+  for (const c of criteria) {
+    assert.ok(
+      VALID_CONTRACTS_CRITERIA.has(c.name),
+      `emitted criterion '${c.name}' is not an accepted Registered Contracts request param`
+    );
+  }
+});
+
+test("Contracts response columns exclude the rejected 'year' column and are all prime_* / documented (#16)", () => {
+  // Live API ('Registered Contracts(expense) All Years') rejects 'year' as a
+  // response column (issue #16, 2026-07-16).
+  assert.ok(
+    !DEFAULT_COLUMNS.Contracts.includes("year"),
+    "'year' must not be requested for the citywide Contracts domain"
+  );
+  // Freeze the exact expected column set so any regression (re-adding year, a
+  // typo, a dropped column) is caught.
+  assert.deepEqual(DEFAULT_COLUMNS.Contracts, [
+    "prime_contract_id",
+    "prime_vendor",
+    "prime_contract_purpose",
+    "prime_contracting_agency",
+    "prime_contract_current_amount",
+    "prime_contract_original_amount",
+    "prime_vendor_spent_to_date",
+    "prime_contract_start_date",
+    "prime_contract_end_date",
+    "prime_contract_award_method",
+    "prime_contract_type",
+    "prime_vendor_mwbe_category",
+    "prime_contract_industry",
+    "prime_contract_pin",
+    "prime_woman_owned_business",
+    "prime_emerging_business",
+    "mocs_registered",
+    "contract_class",
+    "parent_contract_id",
+    "prime_contract_version",
+  ]);
+});
+
+test("request XML for a contracts search carries no prime_vendor criterion and no year column (#16)", () => {
+  const xml = buildRequestXml({
+    type_of_data: "Contracts",
+    criteria: contractsCriteria({ status: "registered", category: "expense", vendor_code: "V1" }),
+    response_columns: DEFAULT_COLUMNS.Contracts,
+  });
+  // A <name>prime_vendor</name> would only appear as a criterion here (prime_vendor
+  // as a <column> is fine). Assert it is not emitted as a criteria name.
+  assert.doesNotMatch(xml, /<criteria><name>prime_vendor<\/name>/);
+  assert.doesNotMatch(xml, /<column>year<\/column>/);
+});
+
+test("search_contracts with vendor_name returns actionable guidance, not an opaque API error (#16)", async () => {
+  const server = new McpServer({ name: "nyc-checkbook-mcp", version: "1.0.0" });
+  registerTools(server);
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+  const res = await client.callTool({
+    name: "search_contracts",
+    arguments: { vendor_name: "Association of Community Employment", page_size: 10 },
+  });
+
+  assert.equal(res.isError, true, "vendor_name lookups must fail fast with guidance");
+  const text = res.content[0].text;
+  // guard() prefixes thrown messages with "Error: "; assert the guidance is carried.
+  assert.ok(text.includes(VENDOR_NAME_UNSUPPORTED_MESSAGE), "carries the guidance message");
+  assert.match(text, /vendor_code/);
+  assert.match(text, /payee_name/);
+  assert.doesNotMatch(text, /prime_vendor' is not valid/); // not the opaque upstream 1101
+
+  await client.close();
+  await server.close();
 });
 
 test("valueCriteria skips undefined and empty values", () => {

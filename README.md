@@ -66,8 +66,8 @@ Search registered or pending NYC contracts with structured filters.
 | `category` | string | no | `expense` | `expense`, `revenue`, or `all` |
 | `fiscal_year` | string | no | — | e.g. `"2024"` |
 | `agency_code` | string | no | — | 3-digit code, e.g. `"858"` for OTI/DoITT |
-| `vendor_name` | string | no | — | Prime vendor name (first 3 chars matched) |
-| `vendor_code` | string | no | — | Vendor ID code |
+| `vendor_name` | string | no | — | **Not a supported contracts filter** — the Checkbook API has no vendor-name parameter and no name→code lookup. Supplying it returns actionable guidance (use `vendor_code`, or `search_spending`/`smart_search` for name search). |
+| `vendor_code` | string | no | — | Vendor ID code (the only vendor filter for contracts) |
 | `contract_id` | string | no | — | e.g. `"CT185820201424467"` |
 | `amount_min` | number | no | — | Minimum current contract amount |
 | `amount_max` | number | no | — | Maximum current contract amount |
@@ -87,10 +87,12 @@ Registered-contract responses include documented WBE/EBE flags (`prime_woman_own
 
 ```
 search_contracts(agency_code="858", fiscal_year="2024")
-search_contracts(vendor_name="SHI International", status="registered")
+search_contracts(vendor_code="V0000012345", status="registered")
 search_contracts(amount_min=100000, amount_max=500000, mwbe_category="3")
 search_contracts(agency_code="858", fiscal_year="2024", include_sub_vendors=true)
 ```
+
+> **Finding contracts by vendor NAME:** the contracts API filters vendors only by `vendor_code`, not by name (there is no name→code lookup in the API). To search by name, use `search_spending(payee_name="…")` for checks paid to a vendor, or `smart_search("…")` for a name/keyword match (note: `smart_search` is often unavailable server-side — see its caveat above).
 
 ---
 
