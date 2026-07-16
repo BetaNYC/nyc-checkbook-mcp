@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-16
+
+### Fixed
+
+- `search_contracts` / `get_contract`: corrected the request-parameter and response-column vocabulary for the citywide Registered Contracts domain (#16). Two mismatches caused every contracts query to fail against the live API:
+  - `vendor_name` was mapped to the request parameter `prime_vendor`, which the Registered Contracts domain does not accept as a filter (it is a response column only). The contracts API has **no vendor-name filter and no name→code lookup** — vendors filter only by `vendor_code`. `vendor_name` now fails fast with actionable guidance (use `vendor_code`, or `search_spending`/`smart_search` for name search) instead of returning an opaque error.
+  - `year` was requested as a response column, which the domain rejects (its vocabulary is the `prime_contract_*` / `prime_vendor` set). This also broke `get_contract`, which requests the same default column set. `year` has been removed from `DEFAULT_COLUMNS.Contracts`.
+- Verified against the live Checkbook NYC API on 2026-07-16: a plain registered/expense query returns records with the corrected columns and no error; `agency_code` and `vendor_code` filters are accepted. OGE/NYCHA contract domains are unaffected (their configs legitimately include a `year` element).
+
 ## [1.3.0] - 2026-07-09
 
 ### Added
