@@ -248,8 +248,9 @@ export function classifySmartSearchResponse(
 }
 
 const SMART_SEARCH_UNAVAILABLE_FALLBACK =
-  "Use the structured tools instead (search_contracts with vendor_name, " +
-  "search_spending with payee_name, etc.), or browse the search in a web " +
+  "Use the structured tools instead (search_spending with payee_name for checks " +
+  "paid to a vendor by name, or search_contracts with vendor_code / agency_code " +
+  "— note contracts have no vendor-name filter), or browse the search in a web " +
   "browser at https://www.checkbooknyc.com/smart_search";
 
 /**
@@ -341,7 +342,14 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "prime_vendor_mwbe_category",
     "prime_contract_industry",
     "prime_contract_pin",
-    "year",
+    // NOTE: "year" is intentionally NOT a response column for the citywide
+    // Registered Contracts domain. The live API ('Registered Contracts(expense)
+    // All Years') rejects it — "Provided response column 'year' value is not
+    // allowed ... Valid values are '...prime_contract_id,...prime_vendor,...'"
+    // (observed 2026-07-16, issue #16). The domain's response vocabulary is the
+    // prime_contract_* / prime_vendor set. (OGE and NYCHA are distinct domains
+    // whose configs DO list a "year" rowElement — see Contracts_OGE /
+    // Contracts_NYCHA below — so this omission is citywide-Contracts-only.)
     // Added v1.2.0 — documented Contracts response columns confirmed against
     // https://www.checkbooknyc.com/contract-api (2026-07-09). WBE/EBE flags
     // (issue #9) and low-priority lineage/registration columns (issue #10).
