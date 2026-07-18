@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - UNRELEASED (pending operator live-verification)
+
+> **Do not tag/publish this version until the operator has verified the new
+> filters against the live Checkbook NYC API.** Every filter added here is
+> transcribed from the CheckbookNYC **open-source config** only — the same source
+> #17 (v1.3.1) proved does **not** match the live contracts domain. They are
+> therefore shipped **disabled by default** behind a fail-fast gate and must be
+> operator-confirmed before release.
+
+### Added
+
+- `search_contracts`: five new **UNVERIFIED**, config-sourced filters for the
+  citywide contracts domain, each **disabled by default** and gated behind the
+  environment variable `CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1`. When
+  disabled, supplying any of them returns actionable fail-fast guidance instead of
+  firing an unverified token at the live API (mirrors how #17 made `vendor_name`
+  fail fast):
+  - `registration_date_from` / `registration_date_to` — `registration_date` range,
+    registered contracts only (#6). Param name appears in #17's live-corroborated
+    accepted-param set, but the range filter itself is not yet live-verified.
+  - `purpose` — server-side "contains" keyword match (#10). In #17's param set;
+    not yet live-verified.
+  - `pin` — contract PIN / tracking number (#10). In #17's param set; not yet
+    live-verified.
+  - `contract_includes_sub_vendors` — 2-char sub-vendor status code, registered
+    only (#8). Param name in #17's set; the accepted code enumeration is **not
+    published**, so the value is passed through verbatim.
+  - `received_date_from` / `received_date_to` — `received_date` range, pending
+    contracts only (#10). **Weakest footing:** not in #17's registered-domain set,
+    and the pending domain was never live-tested.
+- `node:test` coverage (fixture/structure only, zero network) for the new criteria
+  builders, status gating (registration_date registered-only, received_date
+  pending-only), the fail-fast gate, and a regression guard that
+  `DEFAULT_COLUMNS.Contracts` still excludes `year` and `prime_contract_registration_date`.
+
+### Notes
+
+- **Superseded PR #14.** PR #14 built these fields (plus a
+  `prime_contract_registration_date` response column) against the pre-#17
+  open-source config and now conflicts with main. This release re-authors only the
+  surviving request-side filters onto the post-#17 architecture.
+- **Deliberately excluded:** the `prime_contract_registration_date` **response
+  column** #14 added to `DEFAULT_COLUMNS.Contracts`. It is absent from #17's frozen,
+  live-confirmed column set and is the exact class (`year`) the live API rejects — a
+  bad response column fails the whole request, so it is not re-introduced.
+- README is intentionally untouched (owned by PR #15).
+
 ## [1.3.1] - 2026-07-16
 
 ### Fixed
@@ -82,7 +129,9 @@ All new fields were confirmed against the documented [Contracts API](https://www
 - Comptroller data-accuracy disclaimer appended to all tool responses.
 - Acknowledgment of the NYC Comptroller and link to the open-source Checkbook NYC repository.
 
-[Unreleased]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.1...HEAD
+[1.3.2]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.0.1...v1.1.0

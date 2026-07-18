@@ -11,6 +11,10 @@ import {
   contractsColumns,
   SUB_VENDOR_COLUMNS,
   VENDOR_NAME_UNSUPPORTED_MESSAGE,
+  UNVERIFIED_CONTRACT_FILTERS_MESSAGE,
+  CONTRACT_UNVERIFIED_FILTER_KEYS,
+  suppliedUnverifiedContractFilters,
+  unverifiedContractFiltersEnabled,
   nycedcContractsCriteria,
   nychaContractsCriteria,
 } from "../dist/tools.js";
@@ -411,4 +415,171 @@ test("request XML routes to the documented entity type_of_data tokens", () => {
   });
   assert.match(nycha, /<type_of_data>Contracts_NYCHA<\/type_of_data>/);
   assert.match(nycha, /<column>release_current_amount<\/column>/);
+});
+
+// ─── v1.3.2: UNVERIFIED contract filters (issues #6/#8/#10) ───────────────────
+
+test("contractsCriteria emits registration_date range + purpose/pin + sub-vendor filter for registered (#6/#8/#10)", () => {
+  const criteria = contractsCriteria({
+    status: "registered",
+    category: "expense",
+    purpose: "consulting",
+    pin: "20241234",
+    registration_date_from: "2024-01-01",
+    registration_date_to: "2024-12-31",
+    contract_includes_sub_vendors: "01",
+  });
+  assert.deepEqual(criteria, [
+    { name: "status", type: "value", value: "registered" },
+    { name: "category", type: "value", value: "expense" },
+    { name: "purpose", type: "value", value: "consulting" },
+    { name: "pin", type: "value", value: "20241234" },
+    { name: "registration_date", type: "range", start: "2024-01-01", end: "2024-12-31" },
+    { name: "contract_includes_sub_vendors", type: "value", value: "01" },
+  ]);
+});
+
+test("received_date is emitted only for pending; registration_date/sub-vendor only for registered (#6/#10 status gating)", () => {
+  // Pending: received_date range appears; registration_date / sub-vendor do NOT.
+  const pending = contractsCriteria({
+    status: "pending",
+    category: "expense",
+    received_date_from: "2024-03-01",
+    received_date_to: "2024-03-31",
+    // These are registered-only; must be ignored under pending status.
+    registration_date_from: "2024-01-01",
+    contract_includes_sub_vendors: "01",
+  });
+  assert.ok(pending.some((c) => c.name === "received_date"), "received_date present for pending");
+  assert.ok(!pending.some((c) => c.name === "registration_date"), "no registration_date for pending");
+  assert.ok(
+    !pending.some((c) => c.name === "contract_includes_sub_vendors"),
+    "no sub-vendor filter for pending"
+  );
+
+  // Registered: received_date must NOT appear even if supplied.
+  const registered = contractsCriteria({
+    status: "registered",
+    category: "expense",
+    received_date_from: "2024-03-01",
+  });
+  assert.ok(!registered.some((c) => c.name === "received_date"), "no received_date for registered");
+});
+
+test("every registered-search criterion is a documented Registered Contracts request param, incl. the new filters (#6/#8/#10)", () => {
+  const criteria = contractsCriteria({
+    status: "registered",
+    category: "all",
+    fiscal_year: "2024",
+    agency_code: "858",
+    vendor_code: "V123",
+    purpose: "IT",
+    pin: "P1",
+    registration_date_from: "2023-01-01",
+    contract_includes_sub_vendors: "02",
+  });
+  for (const c of criteria) {
+    assert.ok(
+      VALID_CONTRACTS_CRITERIA.has(c.name),
+      `emitted criterion '${c.name}' is not an accepted Registered Contracts request param`
+    );
+  }
+});
+
+test("Contracts response columns still exclude 'year' AND the deliberately-excluded 'prime_contract_registration_date' (#6 exclusion / #16 regression)", () => {
+  assert.ok(!DEFAULT_COLUMNS.Contracts.includes("year"), "'year' must stay excluded");
+  assert.ok(
+    !DEFAULT_COLUMNS.Contracts.includes("prime_contract_registration_date"),
+    "'prime_contract_registration_date' must not be added to the default column set (invalidated by #17)"
+  );
+});
+
+test("suppliedUnverifiedContractFilters reports exactly the unverified filters present", () => {
+  assert.deepEqual(
+    suppliedUnverifiedContractFilters({ status: "registered", purpose: "x", agency_code: "858" }),
+    ["purpose"]
+  );
+  assert.deepEqual(
+    suppliedUnverifiedContractFilters({ registration_date_from: "2024-01-01", pin: "" }),
+    ["registration_date_from"] // empty string is not "supplied"
+  );
+  assert.deepEqual(suppliedUnverifiedContractFilters({ status: "registered", fiscal_year: "2024" }), []);
+});
+
+test("unverifiedContractFiltersEnabled reflects the env flag", () => {
+  const prev = process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS;
+  try {
+    delete process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS;
+    assert.equal(unverifiedContractFiltersEnabled(), false);
+    process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS = "1";
+    assert.equal(unverifiedContractFiltersEnabled(), true);
+    process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS = "true";
+    assert.equal(unverifiedContractFiltersEnabled(), true);
+    process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS = "0";
+    assert.equal(unverifiedContractFiltersEnabled(), false);
+  } finally {
+    if (prev === undefined) delete process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS;
+    else process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS = prev;
+  }
+});
+
+test("CONTRACT_UNVERIFIED_FILTER_KEYS covers exactly the five new filter surfaces", () => {
+  assert.deepEqual([...CONTRACT_UNVERIFIED_FILTER_KEYS], [
+    "purpose",
+    "pin",
+    "registration_date_from",
+    "registration_date_to",
+    "contract_includes_sub_vendors",
+    "received_date_from",
+    "received_date_to",
+  ]);
+});
+
+test("search_contracts fails fast with NEEDS-LIVE-VERIFY guidance when an unverified filter is supplied and the flag is off (throws before any network call)", async () => {
+  const prev = process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS;
+  delete process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS;
+  try {
+    const server = new McpServer({ name: "nyc-checkbook-mcp", version: "1.0.0" });
+    registerTools(server);
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    const res = await client.callTool({
+      name: "search_contracts",
+      arguments: { purpose: "consulting", page_size: 10 },
+    });
+
+    assert.equal(res.isError, true, "unverified filter must fail fast, not hit the live API");
+    const text = res.content[0].text;
+    assert.ok(text.includes(UNVERIFIED_CONTRACT_FILTERS_MESSAGE), "carries the guidance message");
+    assert.match(text, /CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS/);
+    assert.match(text, /purpose/); // names the offending filter
+
+    await client.close();
+    await server.close();
+  } finally {
+    if (prev === undefined) delete process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS;
+    else process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS = prev;
+  }
+});
+
+test("search_contracts with no unverified filters is unaffected by the gate (vendor_name still fails fast)", async () => {
+  // Sanity: the gate only triggers on the new filters. A plain vendor_name call
+  // still routes to the existing #17 fail-fast, not the new one.
+  const server = new McpServer({ name: "nyc-checkbook-mcp", version: "1.0.0" });
+  registerTools(server);
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+  const res = await client.callTool({
+    name: "search_contracts",
+    arguments: { vendor_name: "ACME", page_size: 10 },
+  });
+  assert.equal(res.isError, true);
+  assert.ok(res.content[0].text.includes(VENDOR_NAME_UNSUPPORTED_MESSAGE));
+
+  await client.close();
+  await server.close();
 });

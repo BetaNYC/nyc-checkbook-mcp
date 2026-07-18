@@ -194,6 +194,16 @@ export interface ContractsSearchInput {
   mwbe_category?: string;
   industry?: string;
   contract_type?: string;
+  // ── UNVERIFIED contract filters (issues #6/#8/#10) ──────────────────────────
+  // Config-only, gated at the handler behind CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS.
+  // See CONTRACT_UNVERIFIED_FILTER_KEYS / UNVERIFIED_CONTRACT_FILTERS_MESSAGE below.
+  purpose?: string;
+  pin?: string;
+  registration_date_from?: string; // registered-only
+  registration_date_to?: string; // registered-only
+  contract_includes_sub_vendors?: string; // registered-only
+  received_date_from?: string; // pending-only
+  received_date_to?: string; // pending-only
   include_sub_vendors?: boolean;
 }
 
@@ -249,8 +259,111 @@ export function contractsCriteria(input: ContractsSearchInput): Criteria[] {
   ]) {
     if (range) criteria.push(range);
   }
+
+  // ── UNVERIFIED contract filters (issues #6/#8/#10) ──────────────────────────
+  // Transcribed from the CheckbookNYC open-source API config
+  // (NYCComptroller/Checkbook, checkbook_api/src/config/contracts.json). NOT
+  // verified against the live API. #17 (v1.3.1, 2026-07-16) proved that same
+  // open-source config does NOT match the live contracts domain (it had
+  // vendor_name→prime_vendor and a bogus `year` column that broke every query),
+  // so every token below is treated as UNVERIFIED and gated at the handler behind
+  // CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS until the operator live-verifies.
+  // `purpose`, `pin`, `registration_date`, and `contract_includes_sub_vendors`
+  // DO appear in #17's live-corroborated VALID_CONTRACTS_CRITERIA set; `received_date`
+  // does not (it is a pending-domain param #17 never exercised).
+  //
+  // contractsCriteria stays a pure builder (used by unit tests and by the handler
+  // only after the gate passes); the gate lives in the search_contracts handler.
+  if (input.purpose !== undefined && input.purpose !== "") {
+    criteria.push({ name: "purpose", type: "value", value: String(input.purpose) });
+  }
+  if (input.pin !== undefined && input.pin !== "") {
+    criteria.push({ name: "pin", type: "value", value: String(input.pin) });
+  }
+  // Status-conditional: registered and pending configs expose different date/status
+  // params. Sending a param to the config that does not declare it is rejected, so
+  // each is gated to the status whose config declares it (matches the OGE/NYCHA
+  // pattern already in this file).
+  if (input.status === "registered") {
+    const regDate = rangeCriterion(
+      "registration_date",
+      input.registration_date_from,
+      input.registration_date_to,
+      "1990-01-01",
+      "2099-12-31"
+    );
+    if (regDate) criteria.push(regDate);
+
+    // issue #8 — sub-vendor status-code filter. Criterion name/type is config-sourced;
+    // the accepted 2-char code enumeration is NOT published, so the raw value is
+    // passed through verbatim rather than validated.
+    if (
+      input.contract_includes_sub_vendors !== undefined &&
+      input.contract_includes_sub_vendors !== ""
+    ) {
+      criteria.push({
+        name: "contract_includes_sub_vendors",
+        type: "value",
+        value: String(input.contract_includes_sub_vendors),
+      });
+    }
+  } else if (input.status === "pending") {
+    // issue #10 — received_date is a pending-contract concept only; registered
+    // contracts use registration_date instead. WEAKEST footing: not in #17's set.
+    const recDate = rangeCriterion(
+      "received_date",
+      input.received_date_from,
+      input.received_date_to,
+      "1990-01-01",
+      "2099-12-31"
+    );
+    if (recDate) criteria.push(recDate);
+  }
+
   return criteria;
 }
+
+// ── UNVERIFIED contract-filter gate (issues #6/#8/#10) ────────────────────────
+// The five filters above are transcribed from the CheckbookNYC open-source config
+// only. They are NOT verified against the live API, which is exactly the failure
+// class #17 fixed (the same config had vendor_name/year wrong and broke every
+// contracts query). Until the operator live-verifies them, supplying any of these
+// makes search_contracts fail fast with guidance instead of firing an unverified
+// token at the live API. The operator enables them, after live-verification, by
+// setting CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1 (mirrors the standards §7
+// --operator-authorized pattern). Exported for tests.
+export const CONTRACT_UNVERIFIED_FILTER_KEYS = [
+  "purpose",
+  "pin",
+  "registration_date_from",
+  "registration_date_to",
+  "contract_includes_sub_vendors",
+  "received_date_from",
+  "received_date_to",
+] as const;
+
+/** True when the operator has authorized the unverified contract filters. */
+export function unverifiedContractFiltersEnabled(): boolean {
+  const v = process.env.CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS;
+  return v === "1" || v === "true";
+}
+
+/** Names of unverified contract filters actually supplied on this input. */
+export function suppliedUnverifiedContractFilters(
+  input: Record<string, unknown>
+): string[] {
+  return CONTRACT_UNVERIFIED_FILTER_KEYS.filter(
+    (k) => input[k] !== undefined && input[k] !== ""
+  );
+}
+
+export const UNVERIFIED_CONTRACT_FILTERS_MESSAGE =
+  "search_contracts received filter(s) that are transcribed from the CheckbookNYC " +
+  "open-source config but have NOT been verified against the live API. That config " +
+  "mismatch is exactly what broke every contracts query in v1.3.0 (fixed in #17). " +
+  "These filters are therefore disabled pending operator live-verification. To enable " +
+  "them after confirming each works against the live API, set the environment variable " +
+  "CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1. Unverified filter(s) supplied: ";
 
 // ─── NYCEDC (OGE) + NYCHA contracts (issue #7) ───────────────────────────────
 // Criteria names and defaults transcribed verbatim from the CheckbookNYC API
@@ -464,6 +577,63 @@ export function registerTools(server: McpServer): void {
         mwbe_category: z.string().optional().describe("M/WBE category code"),
         industry: z.string().optional().describe("Industry code"),
         contract_type: z.string().optional().describe("Contract type code"),
+        purpose: z
+          .string()
+          .optional()
+          .describe(
+            "Contract purpose keyword (server-side 'contains' match). " +
+              "NEEDS-LIVE-VERIFY: config-sourced, disabled unless " +
+              "CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1."
+          ),
+        pin: z
+          .string()
+          .optional()
+          .describe(
+            "Contract PIN / tracking number. NEEDS-LIVE-VERIFY: config-sourced, " +
+              "disabled unless CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1."
+          ),
+        registration_date_from: z
+          .string()
+          .optional()
+          .describe(
+            "Registration date range begin (YYYY-MM-DD). Registered contracts only. " +
+              "NEEDS-LIVE-VERIFY: config-sourced, disabled unless " +
+              "CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1."
+          ),
+        registration_date_to: z
+          .string()
+          .optional()
+          .describe(
+            "Registration date range end (YYYY-MM-DD). Registered contracts only. " +
+              "NEEDS-LIVE-VERIFY: config-sourced, disabled unless " +
+              "CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1."
+          ),
+        received_date_from: z
+          .string()
+          .optional()
+          .describe(
+            "Received date range begin (YYYY-MM-DD). Pending contracts only (registered " +
+              "use registration_date). NEEDS-LIVE-VERIFY: config-sourced and the pending " +
+              "domain was not live-tested by #17; disabled unless " +
+              "CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1."
+          ),
+        received_date_to: z
+          .string()
+          .optional()
+          .describe(
+            "Received date range end (YYYY-MM-DD). Pending contracts only. " +
+              "NEEDS-LIVE-VERIFY: config-sourced, disabled unless " +
+              "CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1."
+          ),
+        contract_includes_sub_vendors: z
+          .string()
+          .optional()
+          .describe(
+            "Advanced: sub-vendor status filter — a 2-character code. Registered contracts " +
+              "only. The accepted code values are not published in the Comptroller's API " +
+              "config, so the raw code is passed through verbatim. NEEDS-LIVE-VERIFY: " +
+              "config-sourced, disabled unless CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1."
+          ),
         include_sub_vendors: z
           .boolean()
           .optional()
@@ -481,6 +651,17 @@ export function registerTools(server: McpServer): void {
       guard(() => {
         if (input.vendor_name) {
           throw new Error(VENDOR_NAME_UNSUPPORTED_MESSAGE);
+        }
+        // Fail-fast gate for config-only, live-UNVERIFIED contract filters
+        // (issues #6/#8/#10). Refuse to send an unverified token to the live API
+        // unless the operator has authorized it after live-verification.
+        if (!unverifiedContractFiltersEnabled()) {
+          const supplied = suppliedUnverifiedContractFilters(
+            input as unknown as Record<string, unknown>
+          );
+          if (supplied.length > 0) {
+            throw new Error(UNVERIFIED_CONTRACT_FILTERS_MESSAGE + supplied.join(", ") + ".");
+          }
         }
         return runSearch(
           "Contracts",
