@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Every tool now **rejects unknown parameters** instead of silently dropping them (#19). zod strips unknown keys by default, so an undeclared parameter vanished with no error and the tool returned **unfiltered** results — real, correctly formatted, correctly sourced data answering a different question, with nothing in the response for a calling model to detect. `search_contracts(vendor="Community League of the Heights")` returned 5,755,099 unrelated contract records. Each tool's `inputSchema` is now a `.strict()` `ZodObject`, so an unknown key raises `Input validation error` before the handler runs.
+- `search_contracts` maps the observed guess `vendor` to the declared parameter `vendor_name` and returns `VENDOR_NAME_UNSUPPORTED_MESSAGE` with its three supported alternatives. Previously `vendor_name` (correct) hit that guard while `vendor` (a one-word typo) bypassed it entirely.
+- Note on the advertised schema: `tools/list` already emitted `additionalProperties: false` under `@modelcontextprotocol/sdk` 1.29.0 — the advertised contract was honest and the server contradicted it. `.strict()` preserves that output and adds the missing server-side enforcement; a new test pins `additionalProperties: false` so an SDK change cannot drop it silently.
+
 ## [1.3.1] - 2026-07-16
 
 ### Fixed
