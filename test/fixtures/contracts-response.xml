@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!--
+  Trimmed stand-in for a citywide Registered Contracts response, used to prove
+  that an unfiltered search_contracts call returns bulk unrelated rows. The
+  record_count is the real total observed on 2026-07-21 while reproducing
+  issue #19 (search_contracts(vendor=...) → 5,755,099 rows). Two records only;
+  the count is what the assertion cares about.
+-->
+<response>
+  <status>
+    <result>success</result>
+  </status>
+  <result_records>
+    <record_count>5755099</record_count>
+    <contract_transactions>
+      <transaction>
+        <prime_contract_id>CT185820201424467</prime_contract_id>
+        <prime_vendor>UNRELATED IT VENDOR INC</prime_vendor>
+        <prime_contract_purpose>IT CONSULTING SERVICES</prime_contract_purpose>
+        <prime_contracting_agency>Office of Technology and Innovation</prime_contracting_agency>
+        <prime_contract_current_amount>1000000.00</prime_contract_current_amount>
+      </transaction>
+      <transaction>
+        <prime_contract_id>CT185820201424468</prime_contract_id>
+        <prime_vendor>ANOTHER UNRELATED VENDOR LLC</prime_vendor>
+        <prime_contract_purpose>SOFTWARE MAINTENANCE</prime_contract_purpose>
+        <prime_contracting_agency>Office of Technology and Innovation</prime_contracting_agency>
+        <prime_contract_current_amount>2000000.00</prime_contract_current_amount>
+      </transaction>
+    </contract_transactions>
+  </result_records>
+</response>

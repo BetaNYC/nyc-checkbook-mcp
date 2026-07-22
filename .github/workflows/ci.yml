@@ -6,8 +6,21 @@
 # the main workspace's Python tree enforces in engineering-checks.yml (see
 # platform/system/engineering-standards.md in BetaNYC_AI_Workspace).
 #
-# Runs the build plus the node:test suite in test/ (tool-list parity and
-# criteria-construction unit tests).
+# Runs `npm test`, which is `npm run build && node --test test/*.test.mjs` —
+# the same command a developer runs locally. That matters: this job previously
+# ran a bare `node --test`, which discovers test files by walking the directory
+# and therefore stayed green even while the `npm test` script itself was broken
+# on Node 20 (a quoted glob, unsupported as a `node --test` argument before Node
+# 22, matched nothing and ran zero tests). CI and local must run the same
+# command or CI cannot vouch for the command anyone actually uses.
+#
+# The glob in that script is deliberately UNQUOTED so the shell expands it and
+# node receives literal file paths on every supported version. Do not re-add the
+# quotes.
+#
+# No separate build step: `npm test` compiles first, so one would only run tsc
+# twice. A compile error still fails the job, with tsc's output at the top of
+# the step log.
 #
 # Node matrix: 20.x and 22.x. package.json declares engines "node >= 18", but
 # Node 18 reached End-of-Life on 2025-04-30, so the matrix covers only
@@ -20,10 +33,14 @@
 name: CI
 
 on:
+  # `test/**` matters: the tests and their fixtures are .mjs/.xml, so `**/*.ts`
+  # does not match them and a test-only change would otherwise skip this gate
+  # entirely — silently, which is the failure mode this workflow exists to catch.
   pull_request:
     branches: [main]
     paths:
       - "**/*.ts"
+      - "test/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/**"
@@ -31,6 +48,7 @@ on:
     branches: [main]
     paths:
       - "**/*.ts"
+      - "test/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/**"
@@ -46,8 +64,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build (Node ${{ matrix.node-version }})
+  test:
+    name: Build & test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -70,8 +88,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: node --test
+      - name: Build and test
+        run: npm test

@@ -176,6 +176,47 @@ export const VENDOR_NAME_UNSUPPORTED_MESSAGE =
   "for a name/keyword search (note: the smart_search web endpoint is currently " +
   "behind a WAF and is often unavailable server-side).";
 
+// ─── Strict input schemas (issue #19) ────────────────────────────────────────
+
+/**
+ * Guidance for the undeclared parameter name a caller is most likely to guess.
+ *
+ * `vendor` is not a parameter, so zod used to strip it and the vendor_name guard
+ * below never fired — search_contracts(vendor="…") returned 5,755,099 unrelated
+ * rows (issue #19). A one-word typo defeated a deliberate guard.
+ */
+const VENDOR_ALIAS_HINT =
+  "'vendor' is not a parameter of search_contracts — the declared parameter is " +
+  `'vendor_name'. ${VENDOR_NAME_UNSUPPORTED_MESSAGE}`;
+
+/**
+ * Build a tool inputSchema that REJECTS unknown keys instead of stripping them.
+ *
+ * zod strips unknown keys by default, so an invented parameter vanished silently
+ * and the tool answered a different question with real, correctly formatted data
+ * — undetectable by the calling model. `.strict()` makes it a parse error, which
+ * the SDK raises before the handler runs. Passing a full ZodObject (rather than a
+ * raw shape) is supported: the SDK's getZodSchemaObject returns a schema instance
+ * unchanged and only wraps bare raw shapes.
+ *
+ * `aliases` maps a guess we have actually observed to guidance naming the real
+ * parameter, so the caller lands on the fix rather than a bare unrecognized-key error.
+ */
+export function strictSchema<T extends z.ZodRawShape>(
+  shape: T,
+  aliases: Record<string, string> = {}
+) {
+  return z
+    .object(shape, {
+      errorMap: (issue, ctx) => {
+        if (issue.code !== z.ZodIssueCode.unrecognized_keys) return { message: ctx.defaultError };
+        const hints = issue.keys.map((k) => aliases[k]).filter(Boolean);
+        return { message: hints.length ? `${ctx.defaultError}. ${hints.join(" ")}` : ctx.defaultError };
+      },
+    })
+    .strict();
+}
+
 export interface ContractsSearchInput {
   status: "registered" | "pending";
   category: "expense" | "revenue" | "all";
@@ -370,7 +411,7 @@ export function registerTools(server: McpServer): void {
         "structured explanation and fallback guidance (use search_contracts/search_spending, or browse " +
         "checkbooknyc.com/smart_search in a browser). The structured search tools only match exact " +
         "vendor names and may miss contracts held by resellers.",
-      inputSchema: {
+      inputSchema: strictSchema({
         query: z
           .string()
           .describe("Search term — product name, vendor name, keyword, or phrase"),
@@ -381,7 +422,7 @@ export function registerTools(server: McpServer): void {
           .max(100)
           .optional()
           .describe("Max results to return (default 25, max 100)"),
-      },
+      }),
     },
     async ({ query, limit }) =>
       guard(async () => {
@@ -412,7 +453,7 @@ export function registerTools(server: McpServer): void {
         "NOTE: the contracts API has NO vendor-name filter — vendors are filtered only by vendor_code. " +
         "To find contracts by vendor NAME, use search_spending (payee_name) or smart_search. " +
         "Use smart_search to find contracts by product or software name (many contracts are held by resellers).",
-      inputSchema: {
+      inputSchema: strictSchema({
         status: z
           .enum(["registered", "pending"])
           .optional()
@@ -475,7 +516,7 @@ export function registerTools(server: McpServer): void {
           ),
         page: z.number().optional().default(1).describe("Page number for pagination (default: 1)"),
         page_size: pageSizeSchema,
-      },
+      }, { vendor: VENDOR_ALIAS_HINT }),
     },
     async (input) =>
       guard(() => {
@@ -498,7 +539,7 @@ export function registerTools(server: McpServer): void {
       description:
         "Look up a single NYC contract by its contract ID. Returns full contract details. " +
         "Use this after finding a contract ID via smart_search or search_contracts.",
-      inputSchema: {
+      inputSchema: strictSchema({
         contract_id: z
           .string()
           .describe("Contract ID, e.g. 'CT185820201424467' or 'DO185820252009241'"),
@@ -512,7 +553,7 @@ export function registerTools(server: McpServer): void {
           .optional()
           .default("expense")
           .describe("Contract category (default: expense)"),
-      },
+      }),
     },
     async ({ contract_id, status, category }) =>
       guard(async () => {
@@ -537,7 +578,7 @@ export function registerTools(server: McpServer): void {
       description:
         "Search NYC spending (check) records. Filter by agency, payee, contract, date range, amount, or expense category. " +
         "Either fiscal_year or issue_date_from is required.",
-      inputSchema: {
+      inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
         agency_code: agencyCodeSchema,
         payee_name: z.string().optional().describe("Payee (vendor) name"),
@@ -557,7 +598,7 @@ export function registerTools(server: McpServer): void {
         mwbe_category: z.string().optional().describe("M/WBE category code"),
         page: pageSchema,
         page_size: pageSizeSchema,
-      },
+      }),
     },
     async (input) =>
       guard(() => {
@@ -587,14 +628,14 @@ export function registerTools(server: McpServer): void {
     "search_budget",
     {
       description: "Search NYC budget data by agency, department, fiscal year, or budget code.",
-      inputSchema: {
+      inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
         agency_code: agencyCodeSchema,
         department_code: z.string().optional().describe("Department code"),
         budget_code: z.string().optional().describe("Budget code"),
         page: pageSchema,
         page_size: pageSizeSchema,
-      },
+      }),
     },
     async (input) =>
       guard(() =>
@@ -622,7 +663,7 @@ export function registerTools(server: McpServer): void {
         "Requires fiscal_year or calendar_year. " +
         "NOTE: the Checkbook NYC API does not expose employee names — payroll data is aggregated by " +
         "agency/title/pay date. There is no employee-name search.",
-      inputSchema: {
+      inputSchema: strictSchema({
         fiscal_year: z
           .string()
           .optional()
@@ -646,7 +687,7 @@ export function registerTools(server: McpServer): void {
         amount_max: z.number().optional().describe("Maximum payment amount"),
         page: pageSchema,
         page_size: pageSizeSchema,
-      },
+      }),
     },
     async (input) =>
       guard(() => {
@@ -673,7 +714,7 @@ export function registerTools(server: McpServer): void {
     {
       description:
         "Search NYC revenue data by agency, revenue category/class/source, fund class, or fiscal year.",
-      inputSchema: {
+      inputSchema: strictSchema({
         fiscal_year: z.string().optional().describe("Fiscal year, e.g. '2026'"),
         budget_fiscal_year: z.string().optional().describe("Budget fiscal year, e.g. '2026'"),
         agency_code: agencyCodeSchema,
@@ -687,7 +728,7 @@ export function registerTools(server: McpServer): void {
         funding_class: z.string().optional().describe("Funding class code"),
         page: pageSchema,
         page_size: pageSizeSchema,
-      },
+      }),
     },
     async (input) =>
       guard(() =>
@@ -716,14 +757,14 @@ export function registerTools(server: McpServer): void {
       description:
         "Get all spending for a specific NYC agency in a fiscal year. " +
         "A convenience wrapper around search_spending for agency-level financial overview.",
-      inputSchema: {
+      inputSchema: strictSchema({
         agency_code: z
           .string()
           .describe("3-digit agency code, e.g. '858' for OTI/DoITT, '040' for NYPD"),
         fiscal_year: z.string().describe("Fiscal year, e.g. '2024'"),
         page: pageSchema,
         page_size: pageSizeSchema,
-      },
+      }),
     },
     async ({ agency_code, fiscal_year, page, page_size }) =>
       guard(() =>
@@ -750,7 +791,7 @@ export function registerTools(server: McpServer): void {
         "other-government-entity agreements. Registered expense contracts only. Filter by fiscal year, " +
         "vendor, entity contract number, OGE agency code, award method, expense category, budget name, " +
         "commodity line, amount, and date ranges.",
-      inputSchema: {
+      inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
         vendor_name: z
           .string()
@@ -781,7 +822,7 @@ export function registerTools(server: McpServer): void {
         end_date_to: z.string().optional().describe("End date range end (YYYY-MM-DD)"),
         page: pageSchema,
         page_size: pageSizeSchema,
-      },
+      }),
     },
     async (input) =>
       guard(() =>
@@ -804,7 +845,7 @@ export function registerTools(server: McpServer): void {
         "(purchase-order releases, funding source, program/project). Filter by fiscal year, vendor, " +
         "purchase-order type, responsibility center, contract type, industry, amount, and date ranges " +
         "(including approved date).",
-      inputSchema: {
+      inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
         vendor_name: z.string().optional().describe("Vendor name (contains match)"),
         vendor_code: z.string().optional().describe("Vendor number / code"),
@@ -836,7 +877,7 @@ export function registerTools(server: McpServer): void {
           .describe("Release approved date range end (YYYY-MM-DD)"),
         page: pageSchema,
         page_size: pageSizeSchema,
-      },
+      }),
     },
     async (input) =>
       guard(() =>
