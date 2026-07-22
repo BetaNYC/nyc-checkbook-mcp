@@ -417,7 +417,7 @@ test("request XML routes to the documented entity type_of_data tokens", () => {
   assert.match(nycha, /<column>release_current_amount<\/column>/);
 });
 
-// ─── v1.3.2: UNVERIFIED contract filters (issues #6/#8/#10) ───────────────────
+// ─── v1.5.0: UNVERIFIED contract filters (issues #6/#8/#10) ───────────────────
 
 test("contractsCriteria emits registration_date range + purpose/pin + sub-vendor filter for registered (#6/#8/#10)", () => {
   const criteria = contractsCriteria({
@@ -579,6 +579,44 @@ test("search_contracts with no unverified filters is unaffected by the gate (ven
   });
   assert.equal(res.isError, true);
   assert.ok(res.content[0].text.includes(VENDOR_NAME_UNSUPPORTED_MESSAGE));
+
+  await client.close();
+  await server.close();
+});
+
+// ─── v1.4.0 × v1.5.0 interaction ──────────────────────────────────────────────
+//
+// #19 made every tool schema strict: an undeclared parameter is now REJECTED
+// rather than silently dropped. That turns "forgot to declare a filter" from an
+// invisible no-op into a hard failure, so every filter this release adds must be
+// declared in the advertised schema or it becomes unusable the moment it ships.
+// Both changes landed independently (main at 1.4.0, this branch at 1.5.0), so
+// this pins the seam between them.
+
+test("every UNVERIFIED filter is declared in the advertised strict schema (#19 × #6/#8/#10)", async () => {
+  const server = new McpServer({ name: "test", version: "0.0.0" });
+  registerTools(server);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  await Promise.all([server.server.connect(serverTransport), client.connect(clientTransport)]);
+
+  const { tools } = await client.listTools();
+  const searchContracts = tools.find((t) => t.name === "search_contracts");
+  const declared = Object.keys(searchContracts.inputSchema.properties);
+
+  assert.equal(
+    searchContracts.inputSchema.additionalProperties,
+    false,
+    "search_contracts must still advertise strictness"
+  );
+
+  for (const key of CONTRACT_UNVERIFIED_FILTER_KEYS) {
+    assert.ok(
+      declared.includes(key),
+      `${key} is gated but not declared — under a strict schema an undeclared ` +
+        `filter is rejected outright, so the gate would never even be reached`
+    );
+  }
 
   await client.close();
   await server.close();

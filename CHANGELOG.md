@@ -5,9 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [1.3.2] - UNRELEASED (pending operator live-verification)
+## [1.5.0] - UNRELEASED (pending operator live-verification)
 
 > **Do not tag/publish this version until the operator has verified the new
 > filters against the live Checkbook NYC API.** Every filter added here is
@@ -53,6 +51,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   live-confirmed column set and is the exact class (`year`) the live API rejects — a
   bad response column fails the whole request, so it is not re-introduced.
 - README is intentionally untouched (owned by PR #15).
+
+## [1.4.0] - unreleased
+
+### Fixed
+
+- Every tool now **rejects unknown parameters** instead of silently dropping them (#19). zod strips unknown keys by default, so an undeclared parameter vanished with no error and the tool returned **unfiltered** results — real, correctly formatted, correctly sourced data answering a different question, with nothing in the response for a calling model to detect. `search_contracts(vendor="Community League of the Heights")` returned 5,755,099 unrelated contract records. Each tool's `inputSchema` is now a `.strict()` `ZodObject`, so an unknown key raises `Input validation error` before the handler runs.
+- `search_contracts` maps the observed guess `vendor` to the declared parameter `vendor_name` and returns `VENDOR_NAME_UNSUPPORTED_MESSAGE` with its three supported alternatives. Previously `vendor_name` (correct) hit that guard while `vendor` (a one-word typo) bypassed it entirely.
+- Note on the advertised schema: `tools/list` already emitted `additionalProperties: false` under `@modelcontextprotocol/sdk` 1.29.0 — the advertised contract was honest and the server contradicted it. `.strict()` preserves that output and adds the missing server-side enforcement; a new test pins `additionalProperties: false` so an SDK change cannot drop it silently.
 
 ## [1.3.1] - 2026-07-16
 
@@ -130,7 +136,7 @@ All new fields were confirmed against the documented [Contracts API](https://www
 - Acknowledgment of the NYC Comptroller and link to the open-source Checkbook NYC repository.
 
 [Unreleased]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.1...HEAD
-[1.3.2]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.1...HEAD
+[1.5.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.4.0...HEAD
 [1.3.1]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.1.0...v1.2.0
