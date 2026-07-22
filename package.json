@@ -1,6 +1,6 @@
 {
   "name": "@betanyc/nyc-checkbook-mcp",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "MCP server for NYC Checkbook spending, contracts, budget, payroll, and revenue data",
   "keywords": [
     "mcp",
