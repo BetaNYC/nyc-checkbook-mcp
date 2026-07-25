@@ -8,6 +8,7 @@
  */
 
 import { XMLParser } from "fast-xml-parser";
+import { VERSION } from "./version.js";
 
 const API_ENDPOINT = "https://www.checkbooknyc.com/api";
 const SMART_SEARCH_ENDPOINT = "https://www.checkbooknyc.com/smart_search/citywide";
@@ -55,6 +56,36 @@ interface ApiResponse {
   total_records: number;
   records: Record<string, unknown>[];
   error?: string;
+}
+
+/**
+ * A SUCCESSFUL Checkbook API call. Deliberately carries no `total_records` or
+ * `records` on any failure path — failures throw `CheckbookApiError` instead
+ * (issue #21). This is the type-level guarantee that an upstream error can never
+ * be reported as `total_records: 0` ("unreachable" misread as "no records exist").
+ */
+export interface ApiSuccess {
+  total_records: number;
+  records: Record<string, unknown>[];
+}
+
+/**
+ * Raised for ANY Checkbook API failure — network/timeout, a non-2xx HTTP status
+ * (incl. a 403 block or an unfollowed 3xx redirect), or an API-level failure
+ * status in the XML. Thrown rather than returned so the count-bearing success
+ * shape is never populated on an error (issue #21). The MCP tool layer's `guard()`
+ * wrapper turns it into an `isError` result, so a model sees a surfaced error,
+ * not an empty result set.
+ */
+export class CheckbookApiError extends Error {
+  readonly status?: number;
+  readonly kind: "network" | "redirect" | "http" | "api";
+  constructor(message: string, opts: { status?: number; kind: CheckbookApiError["kind"] }) {
+    super(message);
+    this.name = "CheckbookApiError";
+    this.status = opts.status;
+    this.kind = opts.kind;
+  }
 }
 
 // ─── XML helpers ─────────────────────────────────────────────────────────────
@@ -142,36 +173,179 @@ export function parseResponse(xmlText: string): ApiResponse {
 
 // ─── Core API call ────────────────────────────────────────────────────────────
 
-const USER_AGENT =
-  "betanyc-checkbook-mcp/1.0.1 (github.com/BetaNYC/nyc-checkbook-mcp)";
+// Version derived from package.json in one place (issue #22) so the UA can never
+// again drift from the McpServer version / published package. This UA is how the
+// Comptroller's office identifies our traffic, so it must be truthful.
+const USER_AGENT = `betanyc-checkbook-mcp/${VERSION} (github.com/BetaNYC/nyc-checkbook-mcp)`;
 const REQUEST_TIMEOUT_MS = 60_000;
 
-/** POST with a 60s timeout; retries once on 5xx or network failure. */
-async function fetchWithRetry(
+/**
+ * Retry policy for {@link fetchWithRetry}. Deliberately conservative: the point
+ * of issues #23/#24 is to REDUCE load on a government edge that is actively
+ * blocking us, so we cap attempts tightly and always space them out.
+ */
+export interface RetryPolicy {
+  /** Total attempts including the first (so 3 = initial + 2 retries). */
+  maxAttempts: number;
+  /** Base backoff before jitter, doubled each attempt. */
+  baseDelayMs: number;
+  /** Ceiling on a single backoff delay (before honoring Retry-After). */
+  maxDelayMs: number;
+  /** Overall budget for SCHEDULING retries — a new attempt is not started past this. */
+  deadlineMs: number;
+  /** Per-request timeout (AbortSignal). */
+  timeoutMs: number;
+}
+
+export const DEFAULT_RETRY_POLICY: RetryPolicy = {
+  maxAttempts: 3,
+  baseDelayMs: 500,
+  maxDelayMs: 8_000,
+  deadlineMs: 120_000,
+  timeoutMs: REQUEST_TIMEOUT_MS,
+};
+
+/** Injection seam for tests ONLY — production uses the real fetch/clock/timers. */
+export interface RetryDeps {
+  fetchImpl: typeof fetch;
+  sleepImpl: (ms: number) => Promise<void>;
+  nowImpl: () => number;
+  randomImpl: () => number;
+  makeSignal: () => AbortSignal | undefined;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * A 3xx we deliberately did NOT follow (issue #23).
+ *
+ * Node/undici returns the ACTUAL 3xx response for `redirect: "manual"` — real
+ * status code (e.g. 302) and inspectable `Location` — NOT a browser-style
+ * opaqueredirect. Verified against undici source: "On the web this would return
+ * an `opaqueredirect` response, but that doesn't make sense server side"
+ * (https://github.com/nodejs/undici/issues/1193). We still defensively match a
+ * spec-compliant opaqueredirect (status 0, type set) so the guard holds on any
+ * runtime.
+ */
+export function isRedirectResponse(response: { status: number; type?: string }): boolean {
+  return response.type === "opaqueredirect" || (response.status >= 300 && response.status <= 399);
+}
+
+/**
+ * Equal-jitter exponential backoff (issue #24). `attempt` is 1-based.
+ *
+ *   expo  = min(maxDelayMs, baseDelayMs * 2^(attempt-1))
+ *   delay = expo/2 + random()*(expo/2)     → always ≥ expo/2 > 0
+ *
+ * Equal jitter (rather than full jitter) keeps a guaranteed non-zero floor — so
+ * there is never an "immediate" retry — while still de-correlating concurrent
+ * clients. Algorithm: AWS Architecture Blog, "Exponential Backoff And Jitter".
+ */
+export function computeBackoffMs(
+  attempt: number,
+  policy: RetryPolicy,
+  random: () => number = Math.random
+): number {
+  const expo = Math.min(policy.maxDelayMs, policy.baseDelayMs * 2 ** (attempt - 1));
+  return expo / 2 + random() * (expo / 2);
+}
+
+/**
+ * Parse a `Retry-After` header to milliseconds of delay, or undefined if absent
+ * or unparseable. Per RFC 9110 §10.2.3 / MDN, the value is EITHER `delay-seconds`
+ * (a non-negative integer) OR an `HTTP-date`. Never returns a negative delay.
+ */
+export function parseRetryAfterMs(
+  headerValue: string | null | undefined,
+  now: () => number = Date.now
+): number | undefined {
+  if (!headerValue) return undefined;
+  const trimmed = headerValue.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000; // delay-seconds
+  const dateMs = Date.parse(trimmed); // HTTP-date
+  if (Number.isNaN(dateMs)) return undefined;
+  return Math.max(0, dateMs - now());
+}
+
+/**
+ * POST/GET with retries that BACK OFF (issue #24) and do NOT follow redirects
+ * (issue #23).
+ *
+ * - `redirect: "manual"` — a 3xx is surfaced, never chased. One logical call was
+ *   measured fanning out to ~40 requests against the Checkbook edge before a
+ *   terminal 403; that amplification is the harm this closes.
+ * - Retries ONLY on 5xx and network/timeout errors (the original trigger set),
+ *   but now with equal-jitter exponential backoff, an attempt cap, and an overall
+ *   deadline. Immediate zero-backoff retry is exactly the pattern the API
+ *   operator named as their block trigger.
+ * - NEVER retries a 4xx — 403 is an answer, not a transient failure.
+ * - Honors `Retry-After` on a retryable 5xx when present.
+ *
+ * Returns the terminal Response (2xx, 4xx, or an unfollowed 3xx/5xx); the caller
+ * decides what is an error. Rejects only when every attempt hit a network error.
+ */
+export async function fetchWithRetry(
   url: string,
-  init: RequestInit
+  init: RequestInit,
+  policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+  deps: Partial<RetryDeps> = {}
 ): Promise<Response> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const sleepImpl = deps.sleepImpl ?? defaultSleep;
+  const now = deps.nowImpl ?? Date.now;
+  const random = deps.randomImpl ?? Math.random;
+  const makeSignal = deps.makeSignal ?? (() => AbortSignal.timeout(policy.timeoutMs));
+
+  const start = now();
   let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
+
+  /** Sleep before the next attempt if budget remains; false = give up now. */
+  const backoffOrGiveUp = async (attempt: number, delayMs: number): Promise<boolean> => {
+    if (attempt >= policy.maxAttempts) return false;
+    if (now() - start + delayMs > policy.deadlineMs) return false;
+    await sleepImpl(delayMs);
+    return true;
+  };
+
+  for (let attempt = 1; attempt <= policy.maxAttempts; attempt++) {
+    let response: Response;
     try {
-      const response = await fetch(url, {
-        ...init,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-      if (response.status >= 500 && attempt === 0) {
-        lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
-        continue;
-      }
-      return response;
+      response = await fetchImpl(url, { ...init, redirect: "manual", signal: makeSignal() });
     } catch (err) {
+      // Network error / per-request timeout — retryable.
       lastError = err;
-      if (attempt === 1) break;
+      if (!(await backoffOrGiveUp(attempt, computeBackoffMs(attempt, policy, random)))) break;
+      continue;
     }
+
+    if (isRedirectResponse(response)) return response; // #23: never follow, never retry
+    if (response.status >= 400 && response.status <= 499) return response; // #24: never retry 4xx
+
+    if (response.status >= 500) {
+      lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const delayMs =
+        parseRetryAfterMs(response.headers.get("retry-after"), now) ??
+        computeBackoffMs(attempt, policy, random);
+      if (!(await backoffOrGiveUp(attempt, delayMs))) return response; // out of budget → surface the 5xx
+      continue;
+    }
+
+    return response; // 2xx
   }
+
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-export async function callCheckbookApi(req: ApiRequest): Promise<ApiResponse> {
+/**
+ * Call the Checkbook XML API. Returns records on success; THROWS
+ * {@link CheckbookApiError} on any failure (issue #21) — never a zero-count
+ * "success". A genuinely empty-but-successful result still returns
+ * `{ total_records: 0, records: [] }`; only errors throw, so "no matches" and
+ * "unreachable" are no longer conflated.
+ */
+export async function callCheckbookApi(req: ApiRequest): Promise<ApiSuccess> {
   const body = buildRequestXml(req);
 
   let response: Response;
@@ -182,25 +356,31 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiResponse> {
       body,
     });
   } catch (err) {
-    return {
-      success: false,
-      total_records: 0,
-      records: [],
-      error: `Request failed: ${err instanceof Error ? err.message : String(err)}`,
-    };
+    throw new CheckbookApiError(
+      `Request to Checkbook NYC failed: ${err instanceof Error ? err.message : String(err)}`,
+      { kind: "network" }
+    );
+  }
+
+  if (isRedirectResponse(response)) {
+    throw new CheckbookApiError(
+      `Checkbook NYC returned an unexpected redirect (HTTP ${response.status || "opaque"}) which this client does not follow; the endpoint is likely behind a WAF/interstitial. This is an error, not an empty result set.`,
+      { status: response.status, kind: "redirect" }
+    );
   }
 
   if (!response.ok) {
-    return {
-      success: false,
-      total_records: 0,
-      records: [],
-      error: `HTTP ${response.status}: ${response.statusText}`,
-    };
+    throw new CheckbookApiError(
+      `Checkbook NYC returned HTTP ${response.status}: ${response.statusText}. This is an error, not an empty result set.`,
+      { status: response.status, kind: "http" }
+    );
   }
 
-  const text = await response.text();
-  return parseResponse(text);
+  const parsed = parseResponse(await response.text());
+  if (!parsed.success) {
+    throw new CheckbookApiError(parsed.error ?? "Unknown Checkbook API error", { kind: "api" });
+  }
+  return { total_records: parsed.total_records, records: parsed.records };
 }
 
 // ─── Smart search (web endpoint) ─────────────────────────────────────────────

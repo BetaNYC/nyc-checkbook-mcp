@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - UNRELEASED
+
+HTTP client hardening and correctness fixes for the Checkbook API client. Every
+change is offline-testable and was verified with mocks, fixtures, and a loopback
+server; no request was made to the live (currently blocked) checkbooknyc.com API.
+
+### Fixed
+
+- **Redirects are no longer followed (#23).** `fetchWithRetry` now sends
+  `redirect: "manual"`, so a 3xx is surfaced as an error instead of being chased.
+  A single logical API call had been measured fanning out to roughly 40 requests
+  against the Comptroller's edge (39 redirects before a terminal 403), because
+  Node's `fetch` follows redirects by default. Node/undici returns the actual 3xx
+  response for `redirect: "manual"` (nodejs/undici#1193), which the client
+  inspects and rejects.
+- **Retries use exponential backoff instead of zero backoff (#24).** The client
+  previously retried 5xx and network failures immediately, the exact pattern the
+  API operator named as their block trigger. It now uses equal-jitter exponential
+  backoff with an attempt cap (default 3), an overall deadline, and honors
+  `Retry-After` (RFC 9110 §10.2.3) when present. A 4xx is never retried (a 403 is
+  an answer, not a transient failure). The 5xx-plus-network trigger set is
+  unchanged.
+- **An upstream error is never reported as `total_records: 0` (#21).**
+  `callCheckbookApi` now throws `CheckbookApiError` on any failure (network or
+  timeout, a non-2xx HTTP status, an unfollowed redirect, or an API-level failure
+  status) instead of returning a zero-count "success". Every tool routes through
+  the shared `guard()`, so a blocked or unreachable API surfaces as an `isError`
+  result rather than being read by a model as "no records exist." A genuinely
+  empty but successful result still reports `total_records: 0`. Audited across all
+  tools (the `search_*` family, `get_contract`, `get_agency_spending`).
+- **One version string, derived from `package.json` (#22).** The McpServer version
+  (was `1.0.0`), the outbound `User-Agent` (was `1.0.1`), and `package.json` had
+  diverged. The UA is sent on every request and is how the Comptroller's office
+  identifies BetaNYC traffic, so the drift was externally visible. All three now
+  derive from a single `src/version.ts` that reads `package.json` at runtime,
+  chosen over JSON import attributes (which require Node >= 20.6 and would break
+  the declared `engines.node >= 18`).
+
+### Changed
+
+- **`smart_search` is hard-gated off by default (#25).** The checkbooknyc.com
+  `/smart_search` path is not a supported Checkbook NYC API endpoint; it is a
+  WAF-fronted, JavaScript-rendered web page, confirmed with the Comptroller's
+  office. The tool stays registered (so `tools/list` does not change) but fails
+  fast with opt-in guidance and makes no network call unless
+  `CHECKBOOK_ENABLE_SMART_SEARCH=1` is set. It has been removed from the README's
+  described tool surface. Gating rather than removing keeps this a minor release,
+  not a major one.
+
+### Tests
+
+- New offline suites `test/http-client.test.mjs` and `test/tool-hardening.test.mjs`
+  cover: redirect-not-followed (injected fetch plus a real loopback 302 server),
+  backoff timing, ordering, `Retry-After`, 4xx-not-retried, and the overall
+  deadline (all via a fake clock, no real sleeps); error-never-a-zero-count at both
+  the client and tool layers; the genuine-empty regression; User-Agent tracks the
+  `package.json` version; and the `smart_search` gate in both states. 76 tests pass
+  on Node 26; CI runs the Node 20.x / 22.x matrix.
+
 ## [1.5.0] - UNRELEASED (pending operator live-verification)
 
 > **Do not tag/publish this version until the operator has verified the new
@@ -135,7 +194,8 @@ All new fields were confirmed against the documented [Contracts API](https://www
 - Comptroller data-accuracy disclaimer appended to all tool responses.
 - Acknowledgment of the NYC Comptroller and link to the open-source Checkbook NYC repository.
 
-[Unreleased]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.4.0...HEAD
+[1.6.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.4.0...HEAD
 [1.5.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.4.0...HEAD
 [1.3.1]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/BetaNYC/nyc-checkbook-mcp/compare/v1.2.0...v1.3.0

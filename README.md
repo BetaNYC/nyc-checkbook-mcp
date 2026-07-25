@@ -16,11 +16,10 @@ Vibe coded with [Claude](https://claude.ai) by [BetaNYC](https://beta.nyc).
 
 ## What it does
 
-Exposes 8 tools over MCP:
+Exposes 9 tools over MCP:
 
 | Tool | Description |
 |---|---|
-| `smart_search` | Full-text search across all data — finds contracts by product name, keyword, or vendor |
 | `search_contracts` | Structured contract search with filters (agency, vendor, status, amount, dates, MWBE) |
 | `get_contract` | Look up a single contract by ID |
 | `search_spending` | Search spending (check) records by agency, payee, contract, date, amount |
@@ -31,30 +30,13 @@ Exposes 8 tools over MCP:
 | `search_nycedc_contracts` | NYCEDC / Other Government Entities (OGE) contracts — separate from citywide |
 | `search_nycha_contracts` | NYCHA (Housing Authority) contracts at release/line-item granularity |
 
-> **Important:** Use `smart_search` when looking up a software product, service name, or keyword. Many NYC contracts are held by resellers — searching by the software vendor's name will return nothing. `smart_search` matches the contract's Purpose field where product names actually appear.
+> **Finding a vendor by name?** The contracts API filters vendors only by `vendor_code` (there is no name lookup). Use `search_spending(payee_name="…")` to find checks paid to a named vendor. Note that many NYC contracts are held by resellers, so a software/product name may not match the contract's own vendor.
 
 ---
 
 ## Tools reference
 
-### `smart_search`
-
-Full-text search across all Checkbook NYC data. Searches Purpose fields, vendor names, and all text fields.
-
-> **Availability caveat (verified 2026-07-06):** the underlying checkbooknyc.com `/smart_search` web endpoint is fronted by an Incapsula WAF and renders its results client-side with JavaScript, so it is generally **not usable server-side**. When blocked, this tool returns a structured error with fallback guidance (use `search_contracts` / `search_spending`, or browse [checkbooknyc.com/smart_search](https://www.checkbooknyc.com/smart_search) in a browser).
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `query` | string | yes | — | Search term — product name, keyword, or phrase |
-| `limit` | number | no | 25 | Max results to return (max 100) |
-
-```
-smart_search("ArchiveSocial")
-smart_search("Salesforce")
-smart_search("social media archiving")
-```
-
----
+> **`smart_search` is disabled by default and is intentionally not documented as a usable tool here.** The checkbooknyc.com `/smart_search` path is **not a supported Checkbook NYC API endpoint** — it is a WAF-fronted (Incapsula), JavaScript-rendered web page, confirmed with the NYC Comptroller's office. This server does not call it by default; the tool stays registered but returns opt-in guidance unless `CHECKBOOK_ENABLE_SMART_SEARCH=1` is set (and even then it is almost always WAF-blocked server-side). For vendor-name lookups use `search_spending(payee_name="…")`.
 
 ### `search_contracts`
 
@@ -66,7 +48,7 @@ Search registered or pending NYC contracts with structured filters.
 | `category` | string | no | `expense` | `expense`, `revenue`, or `all` |
 | `fiscal_year` | string | no | — | e.g. `"2024"` |
 | `agency_code` | string | no | — | 3-digit code, e.g. `"858"` for OTI/DoITT |
-| `vendor_name` | string | no | — | **Not a supported contracts filter** — the Checkbook API has no vendor-name parameter and no name→code lookup. Supplying it returns actionable guidance (use `vendor_code`, or `search_spending`/`smart_search` for name search). |
+| `vendor_name` | string | no | — | **Not a supported contracts filter** — the Checkbook API has no vendor-name parameter and no name→code lookup. Supplying it returns actionable guidance (use `vendor_code`, or `search_spending(payee_name=…)` for name search). |
 | `vendor_code` | string | no | — | Vendor ID code (the only vendor filter for contracts) |
 | `contract_id` | string | no | — | e.g. `"CT185820201424467"` |
 | `amount_min` | number | no | — | Minimum current contract amount |
@@ -92,7 +74,7 @@ search_contracts(amount_min=100000, amount_max=500000, mwbe_category="3")
 search_contracts(agency_code="858", fiscal_year="2024", include_sub_vendors=true)
 ```
 
-> **Finding contracts by vendor NAME:** the contracts API filters vendors only by `vendor_code`, not by name (there is no name→code lookup in the API). To search by name, use `search_spending(payee_name="…")` for checks paid to a vendor, or `smart_search("…")` for a name/keyword match (note: `smart_search` is often unavailable server-side — see its caveat above).
+> **Finding contracts by vendor NAME:** the contracts API filters vendors only by `vendor_code`, not by name (there is no name→code lookup in the API). To search by name, use `search_spending(payee_name="…")` for checks paid to a vendor. Many contracts are held by resellers, so a product/software name may not match the contract's own vendor.
 
 ---
 
@@ -361,7 +343,7 @@ Or if installed globally:
 - **Rate limits:** No official limit documented; be reasonable
 - **Coverage:** Citywide agencies + NYCEDC and NYCHA as other government entities (OGE)
 - **Fiscal year:** NYC fiscal year runs July 1 – June 30 (FY2025 = July 2024 – June 2025)
-- **`smart_search` vs structured search:** `smart_search` uses Checkbook's web interface full-text endpoint and is better for product/keyword lookups. Structured tools use the official XML API and are better for precise filtering by agency, amount, or date.
+- **`smart_search` is disabled by default:** the `/smart_search` web path is not a supported API endpoint (WAF-fronted, JS-rendered), so the server does not call it unless `CHECKBOOK_ENABLE_SMART_SEARCH=1` is set. Use the structured XML-API tools; see the note under *Tools reference*.
 
 ---
 

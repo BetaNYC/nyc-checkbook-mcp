@@ -113,6 +113,10 @@ export async function runSearch(
     response_columns: columns,
   });
 
+  // No `error` field here: callCheckbookApi THROWS on any upstream failure
+  // (issue #21), which guard() turns into an isError result. So total_records is
+  // only ever reported for a genuine success — a real 0 means "no matching
+  // records", never "the request failed".
   return textResult({
     ...extra,
     total_records: result.total_records,
@@ -120,7 +124,6 @@ export async function runSearch(
     page_size: pageSize,
     has_more: result.total_records > page * pageSize,
     records: result.records,
-    error: result.error,
   });
 }
 
@@ -406,6 +409,32 @@ export const UNVERIFIED_CONTRACT_FILTERS_MESSAGE =
   "them after confirming each works against the live API, set the environment variable " +
   "CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS=1. Unverified filter(s) supplied: ";
 
+// ─── smart_search hard-gate (issue #25) ──────────────────────────────────────
+// /smart_search is NOT a supported Checkbook NYC API endpoint. It is a
+// WAF-fronted (Incapsula), JavaScript-rendered web page — confirmed with the NYC
+// Comptroller's office as not-a-supported-endpoint — so the server does NOT call
+// it by default. The tool stays registered (so a calling model still discovers it
+// and its guidance, and tools/list is unchanged — no breaking surface change),
+// but by default the handler fails fast WITHOUT any network call. An operator can
+// opt in with CHECKBOOK_ENABLE_SMART_SEARCH=1 (mirrors the unverified-filters gate
+// above). Gating rather than removing keeps this a minor, not a major, change.
+
+/** True when the operator has opted into the unsupported smart_search endpoint (issue #25). */
+export function smartSearchEnabled(): boolean {
+  const v = process.env.CHECKBOOK_ENABLE_SMART_SEARCH;
+  return v === "1" || v === "true";
+}
+
+export const SMART_SEARCH_DISABLED_MESSAGE =
+  "smart_search is disabled by default. The checkbooknyc.com /smart_search endpoint " +
+  "is NOT a supported Checkbook NYC API endpoint (confirmed with the NYC Comptroller's " +
+  "office) — it is a WAF-fronted, JavaScript-rendered web page, not a documented API — so " +
+  "this server does not call it by default. Use the structured tools instead: " +
+  "search_spending(payee_name=…) to find checks paid to a named vendor, search_contracts " +
+  "(by vendor_code / agency_code) for contracts, or the budget/payroll/revenue tools. To opt " +
+  "in anyway (it will almost always report unavailable behind the WAF), set the environment " +
+  "variable CHECKBOOK_ENABLE_SMART_SEARCH=1.";
+
 // ─── NYCEDC (OGE) + NYCHA contracts (issue #7) ───────────────────────────────
 // Criteria names and defaults transcribed verbatim from the CheckbookNYC API
 // config (checkbook_api/src/config/contracts_oge.json and contracts_nycha.json,
@@ -518,12 +547,13 @@ export function registerTools(server: McpServer): void {
     "smart_search",
     {
       description:
-        "Full-text search across all Checkbook NYC data — contracts, spending, payroll, budget, revenue. " +
-        "CAVEAT: the underlying checkbooknyc.com web endpoint is protected by a WAF and renders results " +
-        "client-side, so this tool is frequently unavailable server-side. When it is, it returns a " +
-        "structured explanation and fallback guidance (use search_contracts/search_spending, or browse " +
-        "checkbooknyc.com/smart_search in a browser). The structured search tools only match exact " +
-        "vendor names and may miss contracts held by resellers.",
+        "DISABLED BY DEFAULT (opt in with CHECKBOOK_ENABLE_SMART_SEARCH=1). The " +
+        "checkbooknyc.com /smart_search endpoint is not a supported Checkbook NYC API " +
+        "endpoint — it is a WAF-fronted, JavaScript-rendered web page — so this server " +
+        "does not call it by default. Prefer the structured tools: search_spending" +
+        "(payee_name=…) to find checks paid to a named vendor, search_contracts for " +
+        "contract filters. When disabled (or when opted-in but WAF-blocked) this returns " +
+        "structured fallback guidance rather than data.",
       inputSchema: strictSchema({
         query: z
           .string()
@@ -539,6 +569,15 @@ export function registerTools(server: McpServer): void {
     },
     async ({ query, limit }) =>
       guard(async () => {
+        // Hard-gate (issue #25): do not touch the unsupported endpoint unless the
+        // operator has explicitly opted in. Fail fast BEFORE any network call.
+        if (!smartSearchEnabled()) {
+          return errorResult({
+            query,
+            available: false,
+            reason: SMART_SEARCH_DISABLED_MESSAGE,
+          });
+        }
         const result = await smartSearch(query, limit ?? 25);
         if (!result.available) {
           return errorResult({
@@ -564,8 +603,8 @@ export function registerTools(server: McpServer): void {
         "Search NYC registered and pending contracts with structured filters. " +
         "Filter by agency, vendor_code, contract ID, date range, amount range, industry, MWBE category, and more. " +
         "NOTE: the contracts API has NO vendor-name filter — vendors are filtered only by vendor_code. " +
-        "To find contracts by vendor NAME, use search_spending (payee_name) or smart_search. " +
-        "Use smart_search to find contracts by product or software name (many contracts are held by resellers).",
+        "To find contracts by vendor NAME, use search_spending (payee_name) for checks paid to a named vendor. " +
+        "Many contracts are held by resellers, so a product/software name may not match the contract's own vendor.",
       inputSchema: strictSchema({
         status: z
           .enum(["registered", "pending"])
@@ -749,7 +788,9 @@ export function registerTools(server: McpServer): void {
           ],
           response_columns: DEFAULT_COLUMNS["Contracts"],
         });
-        return textResult({ contract_id, records: result.records, error: result.error });
+        // No `error` field: an upstream failure throws (issue #21) and is
+        // surfaced by guard(), so `records` is only ever a genuine result set.
+        return textResult({ contract_id, records: result.records });
       })
   );
 
