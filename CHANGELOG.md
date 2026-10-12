@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The runtime surface no longer recommends `smart_search`, which 1.6.0 disabled
+  (#34).** Three caller-visible strings still pointed at it after the gate landed:
+  the `search_contracts` vendor-name guidance (`VENDOR_NAME_UNSUPPORTED_MESSAGE`,
+  also returned for the `vendor` alias), the `vendor_name` parameter description,
+  and the `get_contract` tool description. They now point at
+  `search_spending(payee_name=…)`, whose results carry `contract_id`, and at
+  `search_contracts` / `get_contract` by contract ID. The `smart_search` tool's own
+  description and its disabled message are unchanged, since they must name the gate.
+  The `CHECKBOOK_ENABLE_UNVERIFIED_CONTRACT_FILTERS` reference the issue also flagged
+  was already only a historical code comment saying the gate is gone; no change.
+- New regression tests scan every `tools/list` description and input schema, plus
+  the `vendor_name` / `vendor` error text, and fail if any of them names a
+  disabled-by-default tool.
+
 ## [1.6.1] - 2026-07-31
 
 ### Fixed

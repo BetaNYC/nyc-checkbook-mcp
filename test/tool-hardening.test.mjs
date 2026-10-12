@@ -188,3 +188,65 @@ test("#25 smart_search stays registered in tools/list (gate is not a removal —
     await close();
   }
 });
+
+// ─── #34: runtime text must never recommend a disabled tool ──────────────────
+//
+// 1.6.0 gated smart_search off, but tool descriptions, parameter descriptions,
+// and the vendor_name guidance kept pointing callers at it. The tool description
+// IS the interface for an MCP client, so a recommendation the server will refuse
+// is a defect. This scans every caller-visible string except the disabled tool's
+// own entry (which must name itself to explain the gate).
+
+/** Tools that are off unless the operator opts in. Extend when gating another. */
+const DISABLED_BY_DEFAULT = ["smart_search"];
+
+/** Collect every string reachable in a JSON value (descriptions, enums, etc.). */
+function allStrings(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) value.forEach((v) => allStrings(v, out));
+  else if (value && typeof value === "object") Object.values(value).forEach((v) => allStrings(v, out));
+  return out;
+}
+
+function assertNoDisabledToolMention(text, where) {
+  for (const name of DISABLED_BY_DEFAULT) {
+    assert.ok(!text.includes(name), `${where} recommends disabled tool '${name}': ${text}`);
+  }
+}
+
+test("#34 no tools/list entry (description or input schema) mentions a disabled tool", async () => {
+  await withEnv("CHECKBOOK_ENABLE_SMART_SEARCH", undefined, async () => {
+    const { client, close } = await connect();
+    try {
+      const { tools } = await client.listTools();
+      assert.ok(tools.length > 1, "sanity: tools are registered");
+      for (const tool of tools) {
+        if (DISABLED_BY_DEFAULT.includes(tool.name)) continue;
+        assertNoDisabledToolMention(tool.description ?? "", `${tool.name} description`);
+        for (const s of allStrings(tool.inputSchema)) assertNoDisabledToolMention(s, `${tool.name} inputSchema`);
+      }
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("#34 vendor_name / vendor guidance does not recommend a disabled tool (and never hits the network)", async () => {
+  await withEnv("CHECKBOOK_ENABLE_SMART_SEARCH", undefined, async () => {
+    const fetchStub = stubFetch(async () => new Response("unexpected", { status: 500 }));
+    const { client, close } = await connect();
+    try {
+      for (const args of [{ vendor_name: "ACME" }, { vendor: "ACME" }]) {
+        const res = await client.callTool({ name: "search_contracts", arguments: args });
+        assert.equal(res.isError, true);
+        const text = res.content.map((c) => c.text ?? "").join("\n");
+        assert.match(text, /search_spending/, "still points at the supported name-search path");
+        assertNoDisabledToolMention(text, `search_contracts(${Object.keys(args)[0]}) error`);
+      }
+      assert.equal(fetchStub.calls.length, 0);
+    } finally {
+      await close();
+      fetchStub.restore();
+    }
+  });
+});
