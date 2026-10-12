@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.6.2] - 2026-10-11
 
 ### Fixed
 
@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was already only a historical code comment saying the gate is gone; no change.
 - New regression tests scan every `tools/list` description and input schema, plus
   the `vendor_name` / `vendor` error text, and fail if any of them names a
-  disabled-by-default tool.
+  disabled-by-default tool, by name or as prose ("smart search", any case).
 
 ## [1.6.1] - 2026-07-31
 

@@ -208,11 +208,22 @@ function allStrings(value, out = []) {
   return out;
 }
 
+/** Match the tool name and its prose form: "smart_search", "smart search", "Smart Search". */
+function mentionPattern(name) {
+  return new RegExp(name.split("_").join("[ _]"), "i");
+}
+
 function assertNoDisabledToolMention(text, where) {
   for (const name of DISABLED_BY_DEFAULT) {
-    assert.ok(!text.includes(name), `${where} recommends disabled tool '${name}': ${text}`);
+    assert.ok(!mentionPattern(name).test(text), `${where} recommends disabled tool '${name}': ${text}`);
   }
 }
+
+test("#34 the mention pattern catches prose and underscore forms", () => {
+  const re = mentionPattern("smart_search");
+  for (const t of ["use smart_search", "use smart search", "Smart Search", "SMART_SEARCH"]) assert.match(t, re);
+  assert.doesNotMatch("search_spending", re);
+});
 
 test("#34 no tools/list entry (description or input schema) mentions a disabled tool", async () => {
   await withEnv("CHECKBOOK_ENABLE_SMART_SEARCH", undefined, async () => {
