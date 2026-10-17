@@ -56,20 +56,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DEFAULT_COLUMNS.Contracts_revenue`; every `pending` category keeps
   `Contracts_pending` (all pending domains list the same names). `fiscal_year`
   changes nothing: each chosen column is listed both with and without it. The
-  revenue list carries the equivalent fields (id, vendor, purpose, agency,
-  amounts, dates, award method, type, M/WBE, industry, PIN, WBE/EBE flags, class,
-  version) under that domain's own names. It has no spent-to-date or sub-vendor
+  revenue list (16 columns) carries the equivalent fields (id, vendor, purpose,
+  agency, amounts, dates, award method, type, M/WBE, industry, PIN, WBE/EBE
+  flags, version) under that domain's own names. It has no spent-to-date or sub-vendor
   fields, because the domain lists none, so `include_sub_vendors` is ignored
   for revenue, as it already was for pending. `get_contract` uses the same
   selection.
-  - **Verified so far: probe lists only.** Every column sent for every
-    `(status, category)` shape, with and without `fiscal_year`, is in that shape's
-    live valid list (seven paced `cols` probes, 2026-10-16, plus the
-    registered/revenue and expense/pending variants of the 35-probe run).
-    `get_contract`'s own shape (`contract_id`, no `fiscal_year`) has a probe
-    variant that has not been sent yet. **No live tool call has been made against
-    the fixed code**: one paced `search_contracts` call for registered revenue and
-    one `get_contract` for a revenue contract are still owed before tagging.
+- **`contract_class` is not requested for registered revenue contracts (#42).**
+  It is in both live valid lists, so the column checker passed it, but sending
+  it makes the API return no rows. The reply is a success with
+  `record_count` 12293 (no `fiscal_year`) or 399 (`fiscal_year` 2025) and no
+  transactions (live, 2026-10-16). A bisect over the first revenue list, in 9
+  paced calls, isolated it: `contract_id` + `contract_class` returned nothing,
+  and every half without `contract_class` returned rows. The first revenue list
+  shipped on this branch included it, so `search_contracts` for revenue returned
+  `records: []` alongside a count of thousands. `contract_class` stays in the
+  expense/all list, where the live `category: "all"` call returned rows with it.
+- **A silent empty is now an error, not an empty page (#42).** When the API
+  reports `record_count` N > 0, the requested `records_from` is at most N, and
+  no rows come back, `callCheckbookApi()` throws a `CheckbookApiError` of kind
+  `silent-empty`. The tool result is `isError` and says that the API matched N
+  records but returned none, and that this does not mean no records exist. It
+  is an error rather than a warning field for the same reason as #21: a result
+  that cannot be the true answer must not be readable as one, and a caller
+  given `records: []` will report "none". A page past the end and a true zero
+  are still normal empty results. The reply's message (code 1, "no results
+  found") is not used as the signal, because the API sends the same message
+  when it does return rows.
+- **Verification status for #42.** Live on 2026-10-16, against the list that
+  still had `contract_class`: the full 43-request probe returned HTTP 200 for
+  every variant (one transport failure, retried, below) and `npm run
+  check:columns` exited 0 for every list. `search_contracts` with
+  `category: "all"` and with `status: "pending", category: "revenue"` returned
+  records. Registered revenue returned the silent empty above. **The 16-column
+  revenue list in this release has not been sent live with rows returned yet**;
+  one paced `search_contracts` registered revenue call (with and without
+  `fiscal_year`) and one `get_contract` for a revenue contract are owed before
+  tagging.
+- **`scripts/probe-api-spec.sh` no longer dies silently on a transport
+  failure.** A curl failure (exit 92, an HTTP/2 stream error, seen on probe 36
+  on 2026-10-16) killed the script under `set -e`, leaving an empty section and
+  no `ABORTED` line. It now writes `ABORTED: curl exit N after M successful
+  probe(s).` and exits 1, like a non-200.
 - **Record field names now differ by shape**, because records are returned as
   the API sends them, without normalization: registered expense/all use
   `prime_contract_*` names, while registered revenue and pending use plain names
@@ -111,14 +139,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `search_contracts` `category` and `include_sub_vendors` descriptions, the
   `get_contract` description, and the README say which field names each
   `(status, category)` returns and that `include_sub_vendors` is ignored for
-  revenue (#42). `scripts/README.md` adds the revenue vocabulary as item 7 of the
-  defects list, with a note that whether the published docs describe it was not
-  checked, and drops it from "What a pass does not cover".
+  revenue (#42). `scripts/README.md` adds the revenue vocabulary (item 7) and the
+  silent-empty `contract_class` (item 8, a class the checker cannot detect) to
+  the defects list, noting that whether the published docs describe them was
+  not checked. "What a pass does not cover" now says a pass proves acceptance,
+  not rows. README Releases adds a step after `check:columns`: one paced live
+  call per contract shape, each returning at least one row.
 - README Releases has a pre-release step: run the probe once, then
   `npm run check:columns`, before tagging. `npm run check:columns` is added to the
   Development table, and CONTRIBUTING covers column and call-shape changes.
 - `scripts/README.md`: NYCHA `year` and OGE `apt_pin` are added to the
-  documentation-defects list (seven entries now, with #42 below; covering docs and config), each
+  documentation-defects list (eight entries now, with #42's two below; covering docs and config), each
   naming the call shape that failed. New sections cover the checker and how
   domain resolution depends on criteria.
 - `src/checkbook.ts`: the OGE and NYCHA comments say the base lists are derived
@@ -149,6 +180,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   end-to-end test (stubbed `fetch`) that checks which columns each tool puts on
   the wire with and without `fiscal_year`. The tests that treated the published
   config as the authority for NYCHA and OGE response columns are removed.
+  `test/silent-empty.test.mjs` (6 tests, offline) uses two real 2026-10-16
+  replies as fixtures, `contracts-revenue-silent-empty.xml` (12293 matched, no
+  rows) and `contracts-revenue-contract-id-only.xml` (rows, same message). It
+  covers: the guard's boundaries (true zero, a page past the end, rows
+  returned); `callCheckbookApi` rejecting the real reply; `search_contracts` and
+  `get_contract` returning `isError` with the count; `contract_class` absent
+  from every revenue shape; and the probe script's transport abort, run with a
+  fake `curl` that exits 92. Mutation-checked: re-adding `contract_class` fails
+  1 test, disabling the guard fails 2, and reverting the probe fix fails 1.
   For #42: `contractsColumns()` is tested for all 24
   `(status, category, fiscal_year, include_sub_vendors)` combinations, plus a
   guard that registered revenue never sends a `prime_contract_*`, `sub_*` or

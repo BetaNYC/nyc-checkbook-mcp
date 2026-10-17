@@ -516,6 +516,8 @@ bash scripts/probe-api-spec.sh   # 43 paced requests, ~65s; run it once, alone
 npm run check:columns            # must exit 0
 ```
 
+**Then make one paced live call per contract shape and confirm each returns at least one row**: `search_contracts` for registered expense, registered revenue (with and without `fiscal_year`), registered `all`, and pending; `get_contract` for one revenue contract; plus `search_nycha_contracts` and `search_nycedc_contracts` with and without `fiscal_year`. Space the calls out, and run them alone. The checker cannot catch this: a column the API *accepts* can still make it return no rows (`contract_class` on revenue contracts, #42). The server now reports that case as an error ("matched N records but returned none"), not as an empty page, so an `isError` here is the signal to bisect the column list.
+
 If the probe aborts with a 403, that is a rate-limit block: stop, and do not re-run it to check. If the checker reports `UNVERIFIED`, follow [scripts/README.md](scripts/README.md#checking-the-default-response-columns-pre-release). `probe-results.txt` is git-ignored.
 
 Publishing is automated. Pushing a tag of the form `v<version>` (matching `package.json`) runs `.github/workflows/release.yml`, which tests, publishes to npm with provenance, and creates a GitHub Release with generated notes. Requires the `NPM_TOKEN` repository secret. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).

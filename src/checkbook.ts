@@ -79,7 +79,7 @@ export interface ApiSuccess {
  */
 export class CheckbookApiError extends Error {
   readonly status?: number;
-  readonly kind: "network" | "redirect" | "http" | "api";
+  readonly kind: "network" | "redirect" | "http" | "api" | "silent-empty";
   constructor(message: string, opts: { status?: number; kind: CheckbookApiError["kind"] }) {
     super(message);
     this.name = "CheckbookApiError";
@@ -386,6 +386,36 @@ export async function fetchWithRetry(
 }
 
 /**
+ * Silent-empty guard (issue #42). The API can report a success with
+ * record_count N > 0 and return no rows for a page that should have rows (one
+ * accepted response column, `contract_class` on registered revenue contracts,
+ * did exactly that, live 2026-10-16). Passed through, that reads as "nothing on
+ * this page" while the count says thousands exist, and a caller would report the
+ * wrong answer. So it THROWS, by the same rule as #21: a reply that cannot be
+ * the true answer is an error, never a quiet empty result. A page past the end
+ * (records_from > N) and a true zero (N = 0) are normal empties and pass.
+ *
+ * The reply's message (code 1, "no results found") is NOT the signal: the API
+ * sends the same message when rows are returned.
+ */
+export function assertNotSilentEmpty(
+  req: Pick<ApiRequest, "type_of_data" | "records_from">,
+  totalRecords: number,
+  rowCount: number
+): void {
+  const from = req.records_from ?? 1;
+  if (rowCount === 0 && totalRecords > 0 && from <= totalRecords) {
+    throw new CheckbookApiError(
+      `Checkbook NYC matched ${totalRecords} ${req.type_of_data} record(s) but returned none ` +
+        `for records_from=${from}. This is not an empty result: the API counted matches and sent ` +
+        `no rows, which has been caused by a response column that suppresses rows ` +
+        `(issue #42). Report it as a server defect; do not conclude that no records exist.`,
+      { kind: "silent-empty" }
+    );
+  }
+}
+
+/**
  * Call the Checkbook XML API. Returns records on success; THROWS
  * {@link CheckbookApiError} on any failure (issue #21) — never a zero-count
  * "success". A genuinely empty-but-successful result still returns
@@ -427,6 +457,7 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiSuccess> {
   if (!parsed.success) {
     throw new CheckbookApiError(parsed.error ?? "Unknown Checkbook API error", { kind: "api" });
   }
+  assertNotSilentEmpty(req, parsed.total_records, parsed.records.length);
   return { total_records: parsed.total_records, records: parsed.records };
 }
 
@@ -607,7 +638,8 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
   // Contracts(revenue) All Years'). Every name below is in BOTH live valid lists,
   // 'Registered Contracts(revenue) All Years' (no fiscal_year) and 'Registered
   // Contracts(revenue)' (with fiscal_year), probe 2026-10-16. "year" is listed
-  // only with fiscal_year, so it is left out. The domain lists no sub_* columns
+  // only with fiscal_year, so it is left out. "contract_class" is left out because
+// it silently suppresses every row (see below). The domain lists no sub_* columns
   // and no spent_to_date. Selected by contractsColumns() in tools.ts. The other
   // shapes need no list of their own: registered/all lists the same
   // prime_contract_* names as registered/expense, and every pending shape
@@ -629,7 +661,13 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "pin",
     "woman_owned_business",
     "emerging_business",
-    "contract_class",
+    // DO NOT re-add "contract_class". It IS in both live valid lists, but sending
+    // it makes the API return zero rows: the reply is a success with
+    // record_count 12293 (no fiscal_year) / 399 (fiscal_year 2025) and no
+    // transactions (live, 2026-10-16; bisected over this list in 9 paced calls,
+    // contract_id+contract_class -> empty, every half without it -> rows). The
+    // column checker cannot see this: it only proves a name is accepted. The
+    // silent-empty guard in callCheckbookApi() now turns that reply into an error.
     "version",
   ],
   // NYCEDC / Other Government Entities (OGE) contracts. Domain token

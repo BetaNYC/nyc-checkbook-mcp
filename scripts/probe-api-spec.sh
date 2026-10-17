@@ -41,13 +41,25 @@ probe_count=0
 probe () { # $1=label  $2=full request xml
   printf '\n===== %s =====\n' "$1" >> "$OUT"
 
-  local response status body
+  local response status body rc=0
   # -w appends the status on its own final line; no -L, deliberately.
   response=$(curl -s --max-time 60 -X POST "$API" \
     -H "Content-Type: application/xml" \
     -H "User-Agent: $UA" \
     --data-binary "$2" \
-    -w $'\n%{http_code}')
+    -w $'\n%{http_code}') || rc=$?
+  # A transport failure (e.g. curl exit 92, an HTTP/2 stream error, seen
+  # 2026-10-16) must abort with a record too; under set -e it used to kill the
+  # script silently, leaving an empty section and no ABORTED line.
+  if [ "$rc" -ne 0 ]; then
+    {
+      printf 'ABORTED: curl exit %d after %d successful probe(s).\n' "$rc" "$probe_count"
+      printf 'Probing stopped deliberately. See the header of %s.\n' "$0"
+    } >> "$OUT"
+    echo "ABORT: curl exit $rc on '$1' (after $probe_count OK). Transport error, not an HTTP status." >&2
+    echo "Retry a SINGLE request before running the full sweep again." >&2
+    exit 1
+  fi
   status="${response##*$'\n'}"
   body="${response%$'\n'*}"
 
