@@ -6,7 +6,7 @@
 # COMPLIANCE with the limits the Comptroller's office gave us (2026-07-28):
 #
 #   * 1 request per second      -> PACE below, default 1.5s, applied after every
-#                                  call. 26 probes ~= 40s total.
+#                                  call. 31 probes ~= 50s total.
 #   * 20,000 records per call   -> every probe asks for max_records=1. These are
 #                                  error-path probes; no result set is wanted.
 #   * no redirect following     -> curl does not follow redirects without -L.
@@ -85,6 +85,10 @@ C_REG_EXP='<criteria><name>status</name><type>value</type><value>registered</val
 C_REG_REV='<criteria><name>status</name><type>value</type><value>registered</value></criteria><criteria><name>category</name><type>value</type><value>revenue</value></criteria>'
 C_PEND='<criteria><name>status</name><type>value</type><value>pending</value></criteria><criteria><name>category</name><type>value</type><value>expense</value></criteria>'
 FY='<criteria><name>fiscal_year</name><type>value</type><value>2025</value></criteria>'
+BUDGET_Y='<criteria><name>year</name><type>value</type><value>2025</value></criteria>'
+CAL_Y='<criteria><name>calendar_year</name><type>value</type><value>2025</value></criteria>'
+ISSUE_D='<criteria><name>issue_date</name><type>range</type><start>2025-01-01</start><end>2025-01-31</end></criteria>'
+NYCHA_V='<criteria><name>vendor_name</name><type>value</type><value>zzz</value></criteria>'
 
 crit "Contracts registered/expense" Contracts "$C_REG_EXP"
 cols "Contracts registered/expense" Contracts "$C_REG_EXP"
@@ -113,5 +117,17 @@ crit "Spending_NYCHA"  Spending_NYCHA  "$FY"
 cols "Spending_NYCHA"  Spending_NYCHA  "$FY"
 crit "Payroll_NYCHA"   Payroll_NYCHA   "$FY"
 cols "Payroll_NYCHA"   Payroll_NYCHA   "$FY"
+
+# Call-shape variants. The resolved domain, and so its column vocabulary, depends
+# on the criteria sent: with vs without fiscal_year, and the criterion a tool
+# actually uses. These match shapes the tools send. scripts/check-default-columns.mjs
+# checks every DEFAULT_COLUMNS list against every variant here (issue #40).
+cols "Contracts registered/expense FY" Contracts       "$C_REG_EXP$FY"
+cols "Contracts pending/expense FY"    Contracts       "$C_PEND$FY"
+cols "Contracts_OGE FY"                Contracts_OGE   "$C_REG_EXP$FY"
+cols "Contracts_NYCHA no FY"           Contracts_NYCHA "$NYCHA_V"
+cols "Spending issue_date"             Spending        "$ISSUE_D"
+cols "Budget year"                     Budget          "$BUDGET_Y"
+cols "Payroll calendar_year"           Payroll         "$CAL_Y"
 
 printf 'DONE (%d probes)\n' "$probe_count" >> "$OUT"

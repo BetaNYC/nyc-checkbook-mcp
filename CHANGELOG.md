@@ -12,14 +12,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`search_nycha_contracts` and `search_nycedc_contracts` errored on every call
   (#40).** Each default response-column list carried one column the live API
   rejects: `year` for `Contracts_NYCHA` and `apt_pin` for `Contracts_OGE`. One bad
-  column fails the whole request, so both tools had never returned data since they
-  were added in 1.2.0 (#7). Both columns are removed. The comment claiming both
-  domains accept `year` is corrected: the live API accepts it for OGE and rejects
-  it for NYCHA.
-- New tests check each default list against the live API's own "Valid values"
-  lists, not the published config, plus frozen lists and explicit regression
-  asserts. Verified live on 2026-10-15 with one paced request per tool, both
-  HTTP 200 with a record.
+  column fails the whole request, so neither tool had returned data since both
+  were added in 1.2.0 (#7). Both columns are removed. Both come from the published
+  API config. The live API lists each as valid for one call shape and rejected it
+  for another: NYCHA `year` is valid with `fiscal_year` and was rejected on a
+  `vendor_name`-only search, and OGE `apt_pin` is valid without `fiscal_year` and
+  was rejected with it. A fixed default list has to work for both shapes. Verified
+  live on 2026-10-15 with one paced request per tool, both HTTP 200 with a record.
+
+### Added
+
+- **`scripts/check-default-columns.mjs` (`npm run check:columns`)**: one checker
+  for every `DEFAULT_COLUMNS` list plus `SUB_VENDOR_COLUMNS`. It reads
+  `probe-results.txt` and reports any default column absent from a live
+  valid-values list. It makes no network requests. Absence is reported as
+  `UNVERIFIED` rather than as rejected, since the probe lists are a floor, not a
+  ceiling, but it still fails the check. It also fails on a missing or aborted
+  probe variant, or a `DEFAULT_COLUMNS` key with no mapping, and every run prints
+  the call shapes no probe covers. It replaces patching this defect class by hand
+  (#16, v1.6.1, #40).
+- **`scripts/probe-api-spec.sh` sends seven call-shape variants** (24 to 31
+  requests, still paced at 1.5 s), because the column vocabulary depends on the
+  criteria sent: contracts, pending, OGE and NYCHA with and without `fiscal_year`,
+  Spending by `issue_date`, Budget by `year`, and Payroll by `calendar_year`.
+
+### Documentation
+
+- The `search_nycha_contracts` description and README say that results carry no
+  year field and that the response does not echo `fiscal_year`, so callers should
+  filter by `fiscal_year` when the year matters.
+- README Releases has a pre-release step: run the probe once, then
+  `npm run check:columns`, before tagging. `npm run check:columns` is added to the
+  Development table, and CONTRIBUTING covers column changes.
+- `scripts/README.md`: NYCHA `year` and OGE `apt_pin` are added to the
+  documentation-defects list (six entries now, covering docs and config). New
+  sections cover the checker and how domain resolution depends on criteria.
+- `src/checkbook.ts`: the OGE and NYCHA comments now say the lists are derived
+  from the config and corrected against the live API, and warn not to re-add the
+  removed columns. The citywide `Contracts` comment covers citywide only.
+
+### Tests
+
+- `test/check-default-columns.test.mjs` (12 tests, offline) runs against
+  `test/fixtures/probe-results-sample.txt`, which is real API output with its
+  provenance in its header. Covered: the parser (including an aborted section);
+  `UNVERIFIED` wording rather than a rejection claim; `LIVE_VERIFIED_ABSENT`;
+  missing-probe and unmapped-domain failures; each mapped variant must be one the
+  probe script sends; and regressions for #16, v1.6.1 and #40, with each column
+  flagged in the variant that omits it.
+- `test/tools.test.mjs`: one regression guard per domain
+  (`!includes("year")` for NYCHA, `!includes("apt_pin")` for OGE). These are not
+  hand-pasted copies of the full lists. Against the pre-fix source, 4 tests fail.
 
 ## [1.6.2] - 2026-10-11
 

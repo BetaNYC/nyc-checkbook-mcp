@@ -260,6 +260,8 @@ Search NYCEDC / Other Government Entities (OGE) contracts (Checkbook domain `Con
 
 Search NYCHA (New York City Housing Authority) contracts (Checkbook domain `Contracts_NYCHA`), reported at release / line-item granularity (funding source, program/project, responsibility center).
 
+**Results carry no year or fiscal-year field.** The API rejects the `year` response column on some call shapes (#40), so it is not requested, and the response does not echo the `fiscal_year` you passed. When the year matters, filter by `fiscal_year`, one call per year, and label the results yourself. Each record still has its own `start_date`, `end_date`, and `approved_date`.
+
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `fiscal_year` | string | no | — | e.g. `"2024"` |
@@ -435,6 +437,7 @@ npm run build
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run dev` | Compile in watch mode |
 | `npm test` | Build, then run the test suite |
+| `npm run check:columns` | Build, then check every default response-column list against `probe-results.txt` (no network; see [scripts/README.md](scripts/README.md)) |
 | `npm start` | Run the built server |
 
 ### Testing
@@ -445,6 +448,7 @@ Two areas carry tests worth knowing about before you change them:
 
 - **`test/pace.test.mjs`** guards the rate limiter, including the case where several callers are in flight at once. If you change how requests are dispatched, these are the tests that catch a regression into bursting.
 - **`test/strict-schema.test.mjs`** asserts that unknown tool parameters are rejected rather than silently dropped.
+- **`test/check-default-columns.test.mjs`** tests the default-column checker against a recorded probe snapshot. It proves the checker works, not that the columns are valid today. Only a fresh probe run can show that (see Releases).
 
 ### Source layout
 
@@ -494,6 +498,15 @@ This server pairs directly with:
 ---
 
 ## Releases
+
+**Before tagging, check the default response columns against the live API.** A single rejected response column fails every call to a tool, and the published docs and config have been wrong about columns three times (#16, v1.6.1, #40). With no MCP client running:
+
+```bash
+bash scripts/probe-api-spec.sh   # 31 paced requests, ~50s; run it once, alone
+npm run check:columns            # must exit 0
+```
+
+If the probe aborts with a 403, that is a rate-limit block: stop, and do not re-run it to check. If the checker reports `UNVERIFIED`, follow [scripts/README.md](scripts/README.md#checking-the-default-response-columns-pre-release). `probe-results.txt` is git-ignored.
 
 Publishing is automated. Pushing a tag of the form `v<version>` (matching `package.json`) runs `.github/workflows/release.yml`, which tests, publishes to npm with provenance, and creates a GitHub Release with generated notes. Requires the `NPM_TOKEN` repository secret. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 

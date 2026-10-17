@@ -1047,7 +1047,9 @@ export function registerTools(server: McpServer): void {
         "These are separate from citywide contracts and are reported at release / line-item granularity " +
         "(purchase-order releases, funding source, program/project). Filter by fiscal year, vendor, " +
         "purchase-order type, responsibility center, contract type, industry, amount, and date ranges " +
-        "(including approved date).",
+        "(including approved date). Results carry no year or fiscal-year field, and the response does " +
+        "not echo the fiscal_year you passed: when the year matters, filter by fiscal_year (one call per " +
+        "year) and label the results yourself. start_date, end_date, and approved_date are per record.",
       inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
         vendor_name: z.string().optional().describe("Vendor name (contains match)"),

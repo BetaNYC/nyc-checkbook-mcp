@@ -574,10 +574,7 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     // All Years') rejects it — "Provided response column 'year' value is not
     // allowed ... Valid values are '...prime_contract_id,...prime_vendor,...'"
     // (observed 2026-07-16, issue #16). The domain's response vocabulary is the
-    // prime_contract_* / prime_vendor set. OGE and NYCHA are distinct domains
-    // with their own vocabularies: the live API ACCEPTS "year" for
-    // Contracts_OGE but REJECTS it for Contracts_NYCHA (issue #40, observed
-    // 2026-10-15), even though both published configs list a "year" rowElement.
+    // prime_contract_* / prime_vendor set.
     // Added v1.2.0 — documented Contracts response columns confirmed against
     // https://www.checkbooknyc.com/contract-api (2026-07-09). WBE/EBE flags
     // (issue #9) and low-priority lineage/registration columns (issue #10).
@@ -604,11 +601,15 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "received_date",
   ],
   // NYCEDC / Other Government Entities (OGE) contracts. Domain token
-  // "Contracts_OGE"; supports registered expense contracts only. Response
-  // column tokens transcribed verbatim from the CheckbookNYC API config
-  // (checkbook_api/src/config/contracts_oge.json, rowElements) — 2026-07-09.
-  // "apt_pin" removed: the live API rejects it as a response column for
-  // 'Registered Contracts_oge(expense)' (issue #40, observed 2026-10-15).
+  // "Contracts_OGE"; supports registered expense contracts only. Derived from
+  // the CheckbookNYC API config (checkbook_api/src/config/contracts_oge.json,
+  // rowElements, 2026-07-09), then corrected against the live API (issue #40):
+  // the config lists "apt_pin". The live API rejected it on a fiscal_year search
+  // ('Registered Contracts_oge(expense)', 2026-10-15) and lists it as valid
+  // without fiscal_year ('... All Years', probe 2026-10-16). A fixed default
+  // list must work for both, and one rejected column fails the whole call, so
+  // do NOT re-add "apt_pin" from the config. "year" is valid in both. Check
+  // changes with scripts/check-default-columns.mjs, not against the config.
   Contracts_OGE: [
     "other_government_entities",
     "prime_vendor",
@@ -633,11 +634,16 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "budget_name",
   ],
   // NYCHA (New York City Housing Authority) contracts. Domain token
-  // "Contracts_NYCHA"; release/line-item granularity. Response column tokens
-  // transcribed verbatim from the CheckbookNYC API config
-  // (checkbook_api/src/config/contracts_nycha.json, rowElements) — 2026-07-09.
-  // "year" removed: the live API rejects it as a response column for
-  // 'Contracts_nycha' (issue #40, observed 2026-10-15).
+  // "Contracts_NYCHA"; release/line-item granularity. Derived from the
+  // CheckbookNYC API config (checkbook_api/src/config/contracts_nycha.json,
+  // rowElements, 2026-07-09), then corrected against the live API (issue #40):
+  // the config lists "year". The live API rejected it on a vendor_name-only
+  // search (2026-10-15) and lists it as valid with fiscal_year (probe
+  // 2026-10-16). A fixed default list must work for both, and one rejected
+  // column fails the whole call, so do NOT re-add "year" from the config.
+  // Consequence: NYCHA results carry no year field; callers scope by the
+  // fiscal_year criterion. Check changes with scripts/check-default-columns.mjs,
+  // not against the config.
   Contracts_NYCHA: [
     "contract_id",
     "purchase_order_type",

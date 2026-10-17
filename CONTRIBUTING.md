@@ -46,6 +46,7 @@ Open a pull request against `main`. Please make sure:
 - `npm test` passes, which builds and runs the full suite
 - New logic comes with a test. The suite runs against fixtures in `test/fixtures/` and does not touch the network, so tests must not make live API calls
 - Behavior changes are reflected in the README, in the same commit
+- If you add or change a response column, or add a domain or call shape, update `COLUMN_CHECKS` in `scripts/check-default-columns.mjs` and the matching `cols` probe in `scripts/probe-api-spec.sh`. Do not copy columns from the published docs or config without checking them: both have listed columns the live API rejects. A maintainer runs the probe and `npm run check:columns` before each release, so you do not need to make live calls yourself
 - Commits are scoped to one change
 
 Maintainers will review. For changes touching the request path, `src/checkbook.ts`, expect questions about rate limiting.

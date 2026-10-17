@@ -378,98 +378,17 @@ test("Contracts_NYCHA default columns are the documented NYCHA response tokens",
   }
 });
 
-// Live "Valid values" response-column lists, copied verbatim from the API's own
-// rejection errors (issue #40, observed 2026-10-15). The live API is the oracle
-// here, not the published config: the config listed 'year' (NYCHA) and
-// 'apt_pin' (OGE), and the live API rejects both.
-const LIVE_VALID_NYCHA_COLUMNS = new Set(
-  "contract_id,purchase_order_type,record_type,release_number,number_of_releases,item_category,item_description,quantity_ordered,shipment_number,responsibility_center,start_date,end_date,approved_date,line_current_amount,line_number,line_original_amount,line_invoiced_amount,release_current_amount,release_original_amount,release_invoiced_amount,contract_current_amount,contract_original_amount,contract_invoiced_amount,purpose,vendor,contract_type,award_method,industry,pin,location,grant_name,expenditure_type,funding_source,program,project".split(",")
-);
-const LIVE_VALID_OGE_COLUMNS = new Set(
-  "contract_id,purpose,version,year,parent_contract_id,original_amount,current_amount,spent_to_date,prime_vendor,other_government_entities,contract_type,award_method,expense_category,start_date,end_date,pin,document_code,contract_industry,commodity_line,entity_contract_number,budget_name".split(",")
-);
-
-test("Contracts_NYCHA default columns are all accepted by the live API (#40)", () => {
-  assert.ok(
-    !DEFAULT_COLUMNS.Contracts_NYCHA.includes("year"),
-    "'year' is rejected for Contracts_NYCHA by the live API (#40)"
-  );
-  for (const col of DEFAULT_COLUMNS.Contracts_NYCHA) {
-    assert.ok(LIVE_VALID_NYCHA_COLUMNS.has(col), `NYCHA column not in live valid values: ${col}`);
-  }
+// Regression guards for #40: one rejected column fails every call. Whether the
+// full lists match the live API is checked by scripts/check-default-columns.mjs
+// against fresh probe output (pre-release step, scripts/README.md), not here.
+test("Contracts_NYCHA does not request 'year' (#40)", () => {
+  // Rejected on a vendor_name-only search; listed as valid only with fiscal_year.
+  assert.ok(!DEFAULT_COLUMNS.Contracts_NYCHA.includes("year"));
 });
 
-test("Contracts_OGE default columns are all accepted by the live API (#40)", () => {
-  assert.ok(
-    !DEFAULT_COLUMNS.Contracts_OGE.includes("apt_pin"),
-    "'apt_pin' is rejected for Contracts_OGE by the live API (#40)"
-  );
-  for (const col of DEFAULT_COLUMNS.Contracts_OGE) {
-    assert.ok(LIVE_VALID_OGE_COLUMNS.has(col), `OGE column not in live valid values: ${col}`);
-  }
-});
-
-test("Contracts_NYCHA and Contracts_OGE default column lists are frozen (#40)", () => {
-  assert.deepEqual(DEFAULT_COLUMNS.Contracts_NYCHA, [
-    "contract_id",
-    "purchase_order_type",
-    "record_type",
-    "number_of_releases",
-    "quantity_ordered",
-    "release_number",
-    "item_description",
-    "item_category",
-    "shipment_number",
-    "start_date",
-    "end_date",
-    "approved_date",
-    "line_current_amount",
-    "line_number",
-    "line_original_amount",
-    "line_invoiced_amount",
-    "release_current_amount",
-    "release_original_amount",
-    "release_invoiced_amount",
-    "contract_current_amount",
-    "contract_original_amount",
-    "contract_invoiced_amount",
-    "purpose",
-    "vendor",
-    "location",
-    "contract_type",
-    "award_method",
-    "grant_name",
-    "expenditure_type",
-    "industry",
-    "funding_source",
-    "responsibility_center",
-    "pin",
-    "program",
-    "project",
-  ]);
-  assert.deepEqual(DEFAULT_COLUMNS.Contracts_OGE, [
-    "other_government_entities",
-    "prime_vendor",
-    "contract_id",
-    "version",
-    "year",
-    "parent_contract_id",
-    "purpose",
-    "original_amount",
-    "current_amount",
-    "spent_to_date",
-    "pin",
-    "contract_type",
-    "award_method",
-    "expense_category",
-    "start_date",
-    "end_date",
-    "document_code",
-    "contract_industry",
-    "commodity_line",
-    "entity_contract_number",
-    "budget_name",
-  ]);
+test("Contracts_OGE does not request 'apt_pin' (#40)", () => {
+  // Rejected on a fiscal_year search; listed as valid only without fiscal_year.
+  assert.ok(!DEFAULT_COLUMNS.Contracts_OGE.includes("apt_pin"));
 });
 
 test("nycedcContractsCriteria sends required registered/expense and maps OGE criteria names", () => {
