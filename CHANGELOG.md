@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+
+- Corrected the #40 account in the 1.6.3 entry, `scripts/README.md` defects 5
+  and 6, and two source comments. The published API config does not list NYCHA
+  `year` unconditionally: it lists it only in the fiscal-year block, which
+  matches the live API, so that failure was this server's. Only OGE `apt_pin`
+  (listed in both blocks, rejected live with `fiscal_year`) is a config/API
+  mismatch.
+
 ## [1.6.3] - 2026-10-16
 
 ### Fixed
@@ -12,8 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`search_nycha_contracts` and `search_nycedc_contracts` failed for one call
   shape each (#40).** Each default response-column list carried a column the
   live API accepts for one call shape and rejects for another, and one rejected
-  column fails the whole request. Both columns come from the published API
-  config, which lists them unconditionally. The failing shapes:
+  column fails the whole request. The failing shapes:
   - NYCHA requested `year`. The live API lists `year` as valid when `fiscal_year`
     is sent, and rejected it on a `vendor_name`-only search. So a NYCHA search
     without `fiscal_year` failed; one with `fiscal_year` did not.
@@ -22,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     with `fiscal_year` failed; one without it did not.
 
   Both have been in the default lists since the tools were added in 1.2.0 (#7).
+  The published API config splits NYCHA correctly (`year` only in its
+  fiscal-year block), so that one was this server's mistake. It lists OGE
+  `apt_pin` in both blocks, so that one is a config/API mismatch. (Corrected
+  after release: the 1.6.3 entry first said the config listed both
+  unconditionally.)
 - **Response columns now depend on the call shape**, the way `contractsColumns()`
   already does for citywide contracts. The base lists in `DEFAULT_COLUMNS` carry
   neither column. `nychaContractsColumns()` appends `NYCHA_FISCAL_YEAR_COLUMNS`

@@ -442,8 +442,9 @@ test("contractsCriteria is unchanged by the column additions (no sub-vendor crit
 // ─── NYCEDC (OGE) + NYCHA contract routing (issue #7) ────────────────────────
 // Domain tokens and criteria names come from the CheckbookNYC API config
 // (checkbook_api/src/config/contracts_oge.json, contracts_nycha.json). Response
-// columns do NOT: that config listed `year` (NYCHA) and `apt_pin` (OGE)
-// unconditionally, and the live API rejects each for one call shape (#40). The
+// columns do NOT: this server once sent NYCHA `year` and OGE `apt_pin` for every
+// call shape, and the live API rejects each for one shape (#40). The config splits
+// NYCHA by block correctly but lists OGE `apt_pin` in both blocks. The
 // authority for response columns is the live API's valid-values lists, checked by
 // scripts/check-default-columns.mjs against fresh probe output (pre-release step,
 // scripts/README.md). Do not add tests here that copy column lists from the config.
