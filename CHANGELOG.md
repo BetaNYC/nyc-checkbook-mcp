@@ -30,17 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it is not. NYCHA results therefore carry `year` when filtered by `fiscal_year`,
   and no year field otherwise. NYCEDC results carry `apt_pin` only without
   `fiscal_year`.
-- **What has been verified live, and what has not.** On 2026-10-15 one paced
-  request per tool, each with `fiscal_year: "2025"`, returned HTTP 200 with a
-  record. For OGE that exercised the broken shape, with the base list this
-  release sends for it. For NYCHA it proves nothing about the fix: with
-  `fiscal_year` the old list, including `year`, was already valid. NYCHA's broken
-  shape (no `fiscal_year`) is covered by the `Contracts_NYCHA no FY` probe
-  variant, using the error text quoted in #40, and has not been re-sent live with
-  the fixed list. The two re-added shape-specific columns (NYCHA `year` with
-  `fiscal_year`, OGE `apt_pin` without) rest on the probe's valid-values lists
-  only. Before tagging: the probe and `npm run check:columns`, then one live
-  `search_nycha_contracts` call with `vendor_name` only and no `fiscal_year`.
+- **Verified live on 2026-10-16** against this release's code, one request at a
+  time at 3 s pacing, no 403s. `bash scripts/probe-api-spec.sh` returned 35/35
+  HTTP 200 and `npm run check:columns` passed every list in every probed shape.
+  Then one paced tool call per shape, each HTTP 200 with no 1106:
+  `search_nycha_contracts` with `vendor_name` only (the shape #40 broke) returned
+  a record without `year`; with `fiscal_year` it returned a record with `year`.
+  `search_nycedc_contracts` with `fiscal_year` (the shape #40 broke) returned
+  records; with `vendor_name` only (sending `apt_pin`) it was accepted and
+  matched 0 records. An earlier check on 2026-10-15 sent `fiscal_year` for both
+  tools, so it proved the OGE fix only.
 
 ### Added
 
