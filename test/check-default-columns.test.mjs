@@ -14,7 +14,11 @@ import {
   COLUMN_CHECKS,
 } from "../scripts/check-default-columns.mjs";
 import { DEFAULT_COLUMNS } from "../dist/checkbook.js";
-import { SUB_VENDOR_COLUMNS } from "../dist/tools.js";
+import {
+  SUB_VENDOR_COLUMNS,
+  NYCHA_FISCAL_YEAR_COLUMNS,
+  OGE_ALL_YEARS_COLUMNS,
+} from "../dist/tools.js";
 
 const sections = parseProbeResults(
   readFileSync(new URL("./fixtures/probe-results-sample.txt", import.meta.url), "utf8")
@@ -25,6 +29,7 @@ function run(defaultColumns, opts = {}) {
     sections,
     defaultColumns,
     subVendorColumns: SUB_VENDOR_COLUMNS,
+    shapeColumns: { nychaFiscalYear: NYCHA_FISCAL_YEAR_COLUMNS, ogeAllYears: OGE_ALL_YEARS_COLUMNS },
     ...opts,
   });
 }
@@ -67,15 +72,55 @@ test("the resolved vocabulary depends on criteria: same domain, different lists 
   assert.ok(!sections.get("Contracts_OGE FY :: COLUMNS").valid.has("apt_pin")); // with fiscal_year
 });
 
-test("current Contracts_NYCHA and Contracts_OGE defaults pass against both variants in the snapshot", () => {
+const NYCHA_FY = "Contracts_NYCHA (fiscal_year) + NYCHA_FISCAL_YEAR_COLUMNS";
+const NYCHA_NO_FY = "Contracts_NYCHA (no fiscal_year)";
+const OGE_FY = "Contracts_OGE (fiscal_year)";
+const OGE_NO_FY = "Contracts_OGE (no fiscal_year) + OGE_ALL_YEARS_COLUMNS";
+// Variants added after the snapshot was taken; they have never been sent live.
+const NEVER_RUN = new Set([
+  "Contracts_NYCHA contract_id",
+  "Contracts_NYCHA no criteria",
+  "Contracts_OGE contract_id",
+]);
+
+function unverified(result, check) {
+  return findingsFor(result, check)
+    .filter((f) => f.type !== "missing-probe")
+    .map((f) => [f.type, f.probe, f.column]);
+}
+
+test("current NYCHA and OGE lists, per call shape, have no unverified column in the snapshot", () => {
   const result = run(DEFAULT_COLUMNS);
-  assert.deepEqual(findingsFor(result, "Contracts_NYCHA"), []);
-  assert.deepEqual(findingsFor(result, "Contracts_OGE"), []);
-  assert.ok(result.passed.some((c) => c.name === "Contracts_NYCHA"));
-  assert.ok(result.passed.some((c) => c.name === "Contracts_OGE"));
+  for (const check of [NYCHA_FY, NYCHA_NO_FY, OGE_FY, OGE_NO_FY]) {
+    assert.deepEqual(unverified(result, check), [], check);
+    for (const f of findingsFor(result, check)) {
+      assert.ok(NEVER_RUN.has(f.probe), `${check}: unexpected missing probe ${f.probe}`);
+    }
+  }
+  // The two shapes whose variants are all in the snapshot pass outright.
+  assert.ok(result.passed.some((c) => c.name === NYCHA_FY));
+  assert.ok(result.passed.some((c) => c.name === OGE_FY));
 });
 
-test("regression #40: re-adding NYCHA 'year' or OGE 'apt_pin' is flagged, in the variant that omits it", () => {
+test("each shape-specific column is checked only against its own shape's variants (#40)", () => {
+  const byName = new Map(COLUMN_CHECKS.map((c) => [c.name, c]));
+  assert.deepEqual(byName.get(NYCHA_FY).probes, ["Contracts_NYCHA"]);
+  assert.deepEqual(byName.get(OGE_FY).probes, ["Contracts_OGE FY"]);
+  for (const p of byName.get(NYCHA_NO_FY).probes) assert.notEqual(p, "Contracts_NYCHA");
+  for (const p of byName.get(OGE_NO_FY).probes) assert.notEqual(p, "Contracts_OGE FY");
+
+  const shapeColumns = { nychaFiscalYear: ["year"], ogeAllYears: ["apt_pin"] };
+  const nychaFy = byName.get(NYCHA_FY).columns({ defaultColumns: DEFAULT_COLUMNS, shapeColumns });
+  const nychaNoFy = byName.get(NYCHA_NO_FY).columns({ defaultColumns: DEFAULT_COLUMNS, shapeColumns });
+  assert.ok(nychaFy.includes("year"));
+  assert.ok(!nychaNoFy.includes("year"));
+  const ogeFy = byName.get(OGE_FY).columns({ defaultColumns: DEFAULT_COLUMNS, shapeColumns });
+  const ogeNoFy = byName.get(OGE_NO_FY).columns({ defaultColumns: DEFAULT_COLUMNS, shapeColumns });
+  assert.ok(!ogeFy.includes("apt_pin"));
+  assert.ok(ogeNoFy.includes("apt_pin"));
+});
+
+test("regression #40: 'year' in the NYCHA base list or 'apt_pin' in the OGE base list is flagged, in the variant that omits it", () => {
   const broken = {
     ...DEFAULT_COLUMNS,
     Contracts_NYCHA: ["year", ...DEFAULT_COLUMNS.Contracts_NYCHA],
@@ -83,17 +128,27 @@ test("regression #40: re-adding NYCHA 'year' or OGE 'apt_pin' is flagged, in the
   };
   const result = run(broken);
   assert.equal(result.ok, false);
+  assert.deepEqual(unverified(result, NYCHA_NO_FY), [["unverified", "Contracts_NYCHA no FY", "year"]]);
+  assert.deepEqual(unverified(result, OGE_FY), [["unverified", "Contracts_OGE FY", "apt_pin"]]);
+  // The shapes that do accept them stay clean.
+  assert.deepEqual(unverified(result, NYCHA_FY), []);
+  assert.deepEqual(unverified(result, OGE_NO_FY), []);
+});
 
-  const nycha = findingsFor(result, "Contracts_NYCHA");
-  assert.deepEqual(
-    nycha.map((f) => [f.type, f.probe, f.column]),
-    [["unverified", "Contracts_NYCHA no FY", "year"]]
-  );
-  const oge = findingsFor(result, "Contracts_OGE");
-  assert.deepEqual(
-    oge.map((f) => [f.type, f.probe, f.column]),
-    [["unverified", "Contracts_OGE FY", "apt_pin"]]
-  );
+test("a shape-specific column the live list omits is flagged in that shape", () => {
+  const result = run(DEFAULT_COLUMNS, {
+    shapeColumns: { nychaFiscalYear: ["year", "apt_pin"], ogeAllYears: ["apt_pin"] },
+  });
+  assert.deepEqual(unverified(result, NYCHA_FY), [["unverified", "Contracts_NYCHA", "apt_pin"]]);
+});
+
+test("missing shape-specific lists are a finding, not a silent pass", () => {
+  const result = run(DEFAULT_COLUMNS, { shapeColumns: {} });
+  for (const check of [NYCHA_FY, OGE_NO_FY]) {
+    const f = findingsFor(result, check);
+    assert.deepEqual(f.map((x) => x.type), ["unmapped-domain"], check);
+  }
+  assert.ok(!result.passed.some((c) => c.name === NYCHA_FY));
 });
 
 test("regression #16 / v1.6.1: citywide 'year' and sub_contract_registration_date are flagged", () => {
@@ -133,6 +188,45 @@ test("a probe variant missing from the output fails the check instead of passing
   assert.ok(!result.passed.some((c) => c.name === "Contracts"));
 });
 
+test("Budget is checked with and without its year criterion; the snapshot has neither variant", () => {
+  const budget = COLUMN_CHECKS.find((c) => c.name === "Budget");
+  assert.deepEqual(budget.probes, ["Budget year", "Budget no year"]);
+  const result = run(DEFAULT_COLUMNS);
+  assert.deepEqual(
+    findingsFor(result, "Budget").map((f) => [f.type, f.probe]),
+    [
+      ["missing-probe", "Budget year"],
+      ["missing-probe", "Budget no year"],
+    ]
+  );
+});
+
+test("a COLUMNS section holding the 1101 request-parameter error is UNPARSED-PROBE, not a column list", () => {
+  // Real 1101 text (Contracts_NYCHA :: CRITERIA in the snapshot), as it would
+  // appear if a COLUMNS probe's criteria were rejected before its columns were read.
+  const crit = sections.get("Contracts_NYCHA :: CRITERIA").body;
+  assert.match(crit, /^Provided request parameter /);
+  const parsed = parseProbeResults(`===== Contracts_NYCHA :: COLUMNS =====\n${crit}\n`);
+  const s = parsed.get("Contracts_NYCHA :: COLUMNS");
+  assert.equal(s.valid, null);
+  assert.equal(s.domain, null);
+
+  const result = checkDefaultColumns({
+    sections: parsed,
+    defaultColumns: { Contracts_NYCHA: DEFAULT_COLUMNS.Contracts_NYCHA },
+    shapeColumns: { nychaFiscalYear: NYCHA_FISCAL_YEAR_COLUMNS },
+    checks: COLUMN_CHECKS.filter((c) => c.name === NYCHA_FY),
+  });
+  assert.deepEqual(result.findings.map((f) => f.type), ["unparsed-probe"]);
+  assert.match(result.findings[0].message, /no response-column "Valid values/);
+});
+
+test("a CRITERIA section accepts only the request-parameter form", () => {
+  const cols = sections.get("Contracts_NYCHA :: COLUMNS").body;
+  const parsed = parseProbeResults(`===== Contracts_NYCHA :: CRITERIA =====\n${cols}\n`);
+  assert.equal(parsed.get("Contracts_NYCHA :: CRITERIA").valid, null);
+});
+
 test("an aborted probe fails the check", () => {
   const aborted = parseProbeResults(
     "===== Revenue :: COLUMNS =====\nABORTED: HTTP 403 after 3 successful probe(s).\n"
@@ -163,4 +257,21 @@ test("every DEFAULT_COLUMNS key is mapped, and every mapped probe is in probe-ap
       assert.ok(labels.has(probe), `COLUMN_CHECKS '${check.name}' needs probe '${probe}', which the script never sends`);
     }
   }
+});
+
+test("CLI: exit code 1 on findings, full report reaches a pipe, no network; 2 on unreadable input", async () => {
+  // process.exitCode, not process.exit(): the report must not be truncated when
+  // stdout is a pipe. spawnSync captures stdout through a pipe.
+  const { spawnSync } = await import("node:child_process");
+  const script = new URL("../scripts/check-default-columns.mjs", import.meta.url).pathname;
+  const fixture = new URL("./fixtures/probe-results-sample.txt", import.meta.url).pathname;
+  const r = spawnSync(process.execPath, [script, fixture], { encoding: "utf8" });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^Probe output: /);
+  assert.match(r.stdout, /Not covered by any probe/);
+  assert.match(r.stdout, /\d+ finding\(s\)\.\n?$/);
+
+  const missing = spawnSync(process.execPath, [script, fixture + ".does-not-exist"], { encoding: "utf8" });
+  assert.equal(missing.status, 2);
+  assert.match(missing.stderr, /cannot read/);
 });

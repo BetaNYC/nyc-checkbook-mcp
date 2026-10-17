@@ -236,6 +236,8 @@ get_agency_spending("040", "2025")   // NYPD
 
 Search NYCEDC / Other Government Entities (OGE) contracts (Checkbook domain `Contracts_OGE`), which are separate from citywide contracts. Registered expense contracts only.
 
+Results carry `apt_pin` only when you do **not** filter by `fiscal_year`. The API lists that response column as valid without `fiscal_year` and rejected it on a `fiscal_year` search (#40), so it is requested only then.
+
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `fiscal_year` | string | no | — | e.g. `"2024"` |
@@ -260,7 +262,7 @@ Search NYCEDC / Other Government Entities (OGE) contracts (Checkbook domain `Con
 
 Search NYCHA (New York City Housing Authority) contracts (Checkbook domain `Contracts_NYCHA`), reported at release / line-item granularity (funding source, program/project, responsibility center).
 
-**Results carry no year or fiscal-year field.** The API rejects the `year` response column on some call shapes (#40), so it is not requested, and the response does not echo the `fiscal_year` you passed. When the year matters, filter by `fiscal_year`, one call per year, and label the results yourself. Each record still has its own `start_date`, `end_date`, and `approved_date`.
+**Results carry a `year` field only when you filter by `fiscal_year`.** The API lists the `year` response column as valid with `fiscal_year` and rejected it on a search without (#40), so it is requested only then. Without `fiscal_year`, results carry no year or fiscal-year field. When the year matters, filter by `fiscal_year`, one call per year. Each record still has its own `start_date`, `end_date`, and `approved_date`.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -437,7 +439,7 @@ npm run build
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run dev` | Compile in watch mode |
 | `npm test` | Build, then run the test suite |
-| `npm run check:columns` | Build, then check every default response-column list against `probe-results.txt` (no network; see [scripts/README.md](scripts/README.md)) |
+| `npm run check:columns` | Build, then check every default response-column list, per call shape, against `probe-results.txt` (no network; see [scripts/README.md](scripts/README.md)) |
 | `npm start` | Run the built server |
 
 ### Testing
@@ -499,10 +501,10 @@ This server pairs directly with:
 
 ## Releases
 
-**Before tagging, check the default response columns against the live API.** A single rejected response column fails every call to a tool, and the published docs and config have been wrong about columns three times (#16, v1.6.1, #40). With no MCP client running:
+**Before tagging, check the default response columns against the live API.** A single rejected response column fails the whole request, so it can disable a tool outright, and the published docs and config have been wrong about columns three times (#16, v1.6.1, #40). With no MCP client running:
 
 ```bash
-bash scripts/probe-api-spec.sh   # 31 paced requests, ~50s; run it once, alone
+bash scripts/probe-api-spec.sh   # 35 paced requests, ~55s; run it once, alone
 npm run check:columns            # must exit 0
 ```
 

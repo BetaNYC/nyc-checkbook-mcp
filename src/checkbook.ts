@@ -606,10 +606,12 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
   // rowElements, 2026-07-09), then corrected against the live API (issue #40):
   // the config lists "apt_pin". The live API rejected it on a fiscal_year search
   // ('Registered Contracts_oge(expense)', 2026-10-15) and lists it as valid
-  // without fiscal_year ('... All Years', probe 2026-10-16). A fixed default
-  // list must work for both, and one rejected column fails the whole call, so
-  // do NOT re-add "apt_pin" from the config. "year" is valid in both. Check
-  // changes with scripts/check-default-columns.mjs, not against the config.
+  // without fiscal_year ('... All Years', probe 2026-10-16). This base list is
+  // what every call shape sends; one rejected column fails the whole call, so do
+  // NOT add "apt_pin" here. It is appended only for calls without fiscal_year, by
+  // nycedcContractsColumns() / OGE_ALL_YEARS_COLUMNS in tools.ts. "year" is
+  // valid in both. Check changes with scripts/check-default-columns.mjs, not
+  // against the config.
   Contracts_OGE: [
     "other_government_entities",
     "prime_vendor",
@@ -639,11 +641,11 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
   // rowElements, 2026-07-09), then corrected against the live API (issue #40):
   // the config lists "year". The live API rejected it on a vendor_name-only
   // search (2026-10-15) and lists it as valid with fiscal_year (probe
-  // 2026-10-16). A fixed default list must work for both, and one rejected
-  // column fails the whole call, so do NOT re-add "year" from the config.
-  // Consequence: NYCHA results carry no year field; callers scope by the
-  // fiscal_year criterion. Check changes with scripts/check-default-columns.mjs,
-  // not against the config.
+  // 2026-10-16). This base list is what every call shape sends; one rejected
+  // column fails the whole call, so do NOT add "year" here. It is appended only
+  // for calls with fiscal_year, by nychaContractsColumns() /
+  // NYCHA_FISCAL_YEAR_COLUMNS in tools.ts, so results carry year only then.
+  // Check changes with scripts/check-default-columns.mjs, not against the config.
   Contracts_NYCHA: [
     "contract_id",
     "purchase_order_type",

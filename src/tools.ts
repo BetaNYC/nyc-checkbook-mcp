@@ -324,6 +324,44 @@ export function contractsColumns(
   return base;
 }
 
+// ─── Call-shape-dependent columns (issue #40) ────────────────────────────────
+// The live API resolves a different column vocabulary for the same type_of_data
+// depending on whether fiscal_year is among the criteria sent. These columns are
+// valid in one shape only, so they are added for that shape and never otherwise.
+// Source: the live API's own valid-values lists, never the published config
+// (which lists both unconditionally). Checked by scripts/check-default-columns.mjs
+// against the probe variant for each shape.
+
+/**
+ * Contracts_NYCHA columns valid only WITH fiscal_year. Listed by the live
+ * 'Contracts_nycha' domain when fiscal_year is sent (probe 2026-10-16); rejected
+ * with 1106 on a vendor_name-only search (2026-10-15).
+ */
+export const NYCHA_FISCAL_YEAR_COLUMNS: string[] = ["year"];
+
+/**
+ * Contracts_OGE columns valid only WITHOUT fiscal_year. Listed by
+ * 'Registered Contracts_oge(expense) All Years' (probe 2026-10-16); rejected with
+ * 1106 by 'Registered Contracts_oge(expense)' on a fiscal_year search (2026-10-15).
+ */
+export const OGE_ALL_YEARS_COLUMNS: string[] = ["apt_pin"];
+
+function sendsFiscalYear(criteria: Criteria[]): boolean {
+  return criteria.some((c) => c.name === "fiscal_year");
+}
+
+/** Response columns for a NYCHA contracts search, given the criteria it sends. */
+export function nychaContractsColumns(criteria: Criteria[]): string[] {
+  const base = DEFAULT_COLUMNS["Contracts_NYCHA"];
+  return sendsFiscalYear(criteria) ? [...base, ...NYCHA_FISCAL_YEAR_COLUMNS] : base;
+}
+
+/** Response columns for an NYCEDC/OGE contracts search, given the criteria it sends. */
+export function nycedcContractsColumns(criteria: Criteria[]): string[] {
+  const base = DEFAULT_COLUMNS["Contracts_OGE"];
+  return sendsFiscalYear(criteria) ? base : [...base, ...OGE_ALL_YEARS_COLUMNS];
+}
+
 export function contractsCriteria(input: ContractsSearchInput): Criteria[] {
   const criteria: Criteria[] = [
     { name: "status", type: "value", value: input.status },
@@ -1028,15 +1066,16 @@ export function registerTools(server: McpServer): void {
       }),
     },
     async (input) =>
-      guard(() =>
-        runSearch(
+      guard(() => {
+        const criteria = nycedcContractsCriteria(input);
+        return runSearch(
           "Contracts_OGE",
-          DEFAULT_COLUMNS["Contracts_OGE"],
-          nycedcContractsCriteria(input),
+          nycedcContractsColumns(criteria),
+          criteria,
           input.page,
           input.page_size
-        )
-      )
+        );
+      })
   );
 
   server.registerTool(
@@ -1047,9 +1086,9 @@ export function registerTools(server: McpServer): void {
         "These are separate from citywide contracts and are reported at release / line-item granularity " +
         "(purchase-order releases, funding source, program/project). Filter by fiscal year, vendor, " +
         "purchase-order type, responsibility center, contract type, industry, amount, and date ranges " +
-        "(including approved date). Results carry no year or fiscal-year field, and the response does " +
-        "not echo the fiscal_year you passed: when the year matters, filter by fiscal_year (one call per " +
-        "year) and label the results yourself. start_date, end_date, and approved_date are per record.",
+        "(including approved date). Results carry a year field only when you filter by fiscal_year; " +
+        "without fiscal_year they carry no year or fiscal-year field. When the year matters, filter by " +
+        "fiscal_year (one call per year). start_date, end_date, and approved_date are per record.",
       inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
         vendor_name: z.string().optional().describe("Vendor name (contains match)"),
@@ -1085,14 +1124,15 @@ export function registerTools(server: McpServer): void {
       }),
     },
     async (input) =>
-      guard(() =>
-        runSearch(
+      guard(() => {
+        const criteria = nychaContractsCriteria(input);
+        return runSearch(
           "Contracts_NYCHA",
-          DEFAULT_COLUMNS["Contracts_NYCHA"],
-          nychaContractsCriteria(input),
+          nychaContractsColumns(criteria),
+          criteria,
           input.page,
           input.page_size
-        )
-      )
+        );
+      })
   );
 }

@@ -6,7 +6,7 @@
 # COMPLIANCE with the limits the Comptroller's office gave us (2026-07-28):
 #
 #   * 1 request per second      -> PACE below, default 1.5s, applied after every
-#                                  call. 31 probes ~= 50s total.
+#                                  call. 35 probes ~= 55s total.
 #   * 20,000 records per call   -> every probe asks for max_records=1. These are
 #                                  error-path probes; no result set is wanted.
 #   * no redirect following     -> curl does not follow redirects without -L.
@@ -77,8 +77,12 @@ crit () { # $1=label $2=type_of_data $3=extra criteria xml
   probe "$1 :: CRITERIA" "<request><type_of_data>$2</type_of_data><records_from>1</records_from><max_records>1</max_records><search_criteria>$3<criteria><name>zzz_invalid</name><type>value</type><value>x</value></criteria></search_criteria></request>"
 }
 
-cols () { # $1=label $2=type_of_data $3=extra criteria xml
-  probe "$1 :: COLUMNS" "<request><type_of_data>$2</type_of_data><records_from>1</records_from><max_records>1</max_records><search_criteria>$3</search_criteria><response_columns><column>zzz_invalid</column></response_columns></request>"
+cols () { # $1=label $2=type_of_data $3=extra criteria xml (may be empty)
+  # With no criteria, omit <search_criteria> entirely, exactly as buildRequestXml
+  # in src/checkbook.ts does, so the probe matches the request a tool sends.
+  local sc=""
+  if [ -n "$3" ]; then sc="<search_criteria>$3</search_criteria>"; fi
+  probe "$1 :: COLUMNS" "<request><type_of_data>$2</type_of_data><records_from>1</records_from><max_records>1</max_records>$sc<response_columns><column>zzz_invalid</column></response_columns></request>"
 }
 
 C_REG_EXP='<criteria><name>status</name><type>value</type><value>registered</value></criteria><criteria><name>category</name><type>value</type><value>expense</value></criteria>'
@@ -89,6 +93,7 @@ BUDGET_Y='<criteria><name>year</name><type>value</type><value>2025</value></crit
 CAL_Y='<criteria><name>calendar_year</name><type>value</type><value>2025</value></criteria>'
 ISSUE_D='<criteria><name>issue_date</name><type>range</type><start>2025-01-01</start><end>2025-01-31</end></criteria>'
 NYCHA_V='<criteria><name>vendor_name</name><type>value</type><value>zzz</value></criteria>'
+CID='<criteria><name>contract_id</name><type>value</type><value>zzz</value></criteria>'
 
 crit "Contracts registered/expense" Contracts "$C_REG_EXP"
 cols "Contracts registered/expense" Contracts "$C_REG_EXP"
@@ -126,8 +131,12 @@ cols "Contracts registered/expense FY" Contracts       "$C_REG_EXP$FY"
 cols "Contracts pending/expense FY"    Contracts       "$C_PEND$FY"
 cols "Contracts_OGE FY"                Contracts_OGE   "$C_REG_EXP$FY"
 cols "Contracts_NYCHA no FY"           Contracts_NYCHA "$NYCHA_V"
+cols "Contracts_NYCHA no criteria"     Contracts_NYCHA ""
+cols "Contracts_NYCHA contract_id"     Contracts_NYCHA "$CID"
+cols "Contracts_OGE contract_id"       Contracts_OGE   "$C_REG_EXP$CID"
 cols "Spending issue_date"             Spending        "$ISSUE_D"
 cols "Budget year"                     Budget          "$BUDGET_Y"
+cols "Budget no year"                  Budget          ""
 cols "Payroll calendar_year"           Payroll         "$CAL_Y"
 
 printf 'DONE (%d probes)\n' "$probe_count" >> "$OUT"

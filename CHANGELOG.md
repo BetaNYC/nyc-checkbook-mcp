@@ -9,60 +9,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`search_nycha_contracts` and `search_nycedc_contracts` errored on every call
-  (#40).** Each default response-column list carried one column the live API
-  rejects: `year` for `Contracts_NYCHA` and `apt_pin` for `Contracts_OGE`. One bad
-  column fails the whole request, so neither tool had returned data since both
-  were added in 1.2.0 (#7). Both columns are removed. Both come from the published
-  API config. The live API lists each as valid for one call shape and rejected it
-  for another: NYCHA `year` is valid with `fiscal_year` and was rejected on a
-  `vendor_name`-only search, and OGE `apt_pin` is valid without `fiscal_year` and
-  was rejected with it. A fixed default list has to work for both shapes. Verified
-  live on 2026-10-15 with one paced request per tool, both HTTP 200 with a record.
+- **`search_nycha_contracts` and `search_nycedc_contracts` failed for one call
+  shape each (#40).** Each default response-column list carried a column the
+  live API accepts for one call shape and rejects for another, and one rejected
+  column fails the whole request. Both columns come from the published API
+  config, which lists them unconditionally. The failing shapes:
+  - NYCHA requested `year`. The live API lists `year` as valid when `fiscal_year`
+    is sent, and rejected it on a `vendor_name`-only search. So a NYCHA search
+    without `fiscal_year` failed; one with `fiscal_year` did not.
+  - OGE requested `apt_pin`. The live API lists `apt_pin` as valid without
+    `fiscal_year`, and rejected it on a `fiscal_year` search. So an NYCEDC search
+    with `fiscal_year` failed; one without it did not.
+
+  Both have been in the default lists since the tools were added in 1.2.0 (#7).
+- **Response columns now depend on the call shape**, the way `contractsColumns()`
+  already does for citywide contracts. The base lists in `DEFAULT_COLUMNS` carry
+  neither column. `nychaContractsColumns()` appends `NYCHA_FISCAL_YEAR_COLUMNS`
+  (`year`) only when `fiscal_year` is among the criteria sent, and
+  `nycedcContractsColumns()` appends `OGE_ALL_YEARS_COLUMNS` (`apt_pin`) only when
+  it is not. NYCHA results therefore carry `year` when filtered by `fiscal_year`,
+  and no year field otherwise. NYCEDC results carry `apt_pin` only without
+  `fiscal_year`.
+- **What has been verified live, and what has not.** On 2026-10-15 one paced
+  request per tool, each with `fiscal_year: "2025"`, returned HTTP 200 with a
+  record. For OGE that exercised the broken shape, with the base list this
+  release sends for it. For NYCHA it proves nothing about the fix: with
+  `fiscal_year` the old list, including `year`, was already valid. NYCHA's broken
+  shape (no `fiscal_year`) is covered by the `Contracts_NYCHA no FY` probe
+  variant, using the error text quoted in #40, and has not been re-sent live with
+  the fixed list. The two re-added shape-specific columns (NYCHA `year` with
+  `fiscal_year`, OGE `apt_pin` without) rest on the probe's valid-values lists
+  only. Before tagging: the probe and `npm run check:columns`, then one live
+  `search_nycha_contracts` call with `vendor_name` only and no `fiscal_year`.
 
 ### Added
 
 - **`scripts/check-default-columns.mjs` (`npm run check:columns`)**: one checker
-  for every `DEFAULT_COLUMNS` list plus `SUB_VENDOR_COLUMNS`. It reads
-  `probe-results.txt` and reports any default column absent from a live
-  valid-values list. It makes no network requests. Absence is reported as
+  for every default response-column list, per call shape, plus
+  `SUB_VENDOR_COLUMNS`. It reads `probe-results.txt` and reports any column absent
+  from the live valid-values list of a probe variant mapped to that shape. Each
+  shape's list is checked only against that shape's variants, so NYCHA's `year`
+  is checked against the `fiscal_year` variant and OGE's `apt_pin` against the
+  variants without it. It makes no network requests. Absence is reported as
   `UNVERIFIED` rather than as rejected, since the probe lists are a floor, not a
   ceiling, but it still fails the check. It also fails on a missing or aborted
-  probe variant, or a `DEFAULT_COLUMNS` key with no mapping, and every run prints
-  the call shapes no probe covers. It replaces patching this defect class by hand
+  probe variant; on a `COLUMNS` section whose text is not the 1106 response-column
+  error (for example a 1101 request-parameter error, which lists criteria, not
+  columns); and on a `DEFAULT_COLUMNS` key with no mapping. Every run prints the
+  call shapes no probe covers. It replaces patching this defect class by hand
   (#16, v1.6.1, #40).
-- **`scripts/probe-api-spec.sh` sends seven call-shape variants** (24 to 31
-  requests, still paced at 1.5 s), because the column vocabulary depends on the
-  criteria sent: contracts, pending, OGE and NYCHA with and without `fiscal_year`,
-  Spending by `issue_date`, Budget by `year`, and Payroll by `calendar_year`.
+- **`scripts/probe-api-spec.sh` sends eleven call-shape variants** (24 to 35
+  requests, still paced at 1.5 s, ~55 s), because the column vocabulary depends
+  on the criteria sent: citywide and pending contracts with `fiscal_year`; OGE
+  with `fiscal_year` and with `contract_id`; NYCHA by `vendor_name` without
+  `fiscal_year`, by `contract_id`, and with no criteria; Spending by
+  `issue_date`; Budget with its `year` criterion and with no criteria; and
+  Payroll by `calendar_year`. A variant with no criteria omits
+  `<search_criteria>` entirely, as `buildRequestXml` does.
 
 ### Documentation
 
-- The `search_nycha_contracts` description and README say that results carry no
-  year field and that the response does not echo `fiscal_year`, so callers should
-  filter by `fiscal_year` when the year matters.
+- The `search_nycha_contracts` description and README say that results carry a
+  year field only when filtering by `fiscal_year`, and none otherwise.
 - README Releases has a pre-release step: run the probe once, then
   `npm run check:columns`, before tagging. `npm run check:columns` is added to the
-  Development table, and CONTRIBUTING covers column changes.
+  Development table, and CONTRIBUTING covers column and call-shape changes.
 - `scripts/README.md`: NYCHA `year` and OGE `apt_pin` are added to the
-  documentation-defects list (six entries now, covering docs and config). New
-  sections cover the checker and how domain resolution depends on criteria.
-- `src/checkbook.ts`: the OGE and NYCHA comments now say the lists are derived
-  from the config and corrected against the live API, and warn not to re-add the
-  removed columns. The citywide `Contracts` comment covers citywide only.
+  documentation-defects list (six entries now, covering docs and config), each
+  naming the call shape that failed. New sections cover the checker and how
+  domain resolution depends on criteria.
+- `src/checkbook.ts`: the OGE and NYCHA comments say the base lists are derived
+  from the config and corrected against the live API, that the shape-specific
+  column is appended in `src/tools.ts`, and not to add it to the base list. The
+  citywide `Contracts` comment covers citywide only.
 
 ### Tests
 
-- `test/check-default-columns.test.mjs` (12 tests, offline) runs against
+- `test/check-default-columns.test.mjs` (19 tests, offline) runs against
   `test/fixtures/probe-results-sample.txt`, which is real API output with its
-  provenance in its header. Covered: the parser (including an aborted section);
-  `UNVERIFIED` wording rather than a rejection claim; `LIVE_VERIFIED_ABSENT`;
-  missing-probe and unmapped-domain failures; each mapped variant must be one the
-  probe script sends; and regressions for #16, v1.6.1 and #40, with each column
-  flagged in the variant that omits it.
-- `test/tools.test.mjs`: one regression guard per domain
-  (`!includes("year")` for NYCHA, `!includes("apt_pin")` for OGE). These are not
-  hand-pasted copies of the full lists. Against the pre-fix source, 4 tests fail.
+  provenance in its header. Covered: the parser (including an aborted section, and
+  a `COLUMNS` section holding a 1101 error, which must be `UNPARSED-PROBE`);
+  per-shape mapping, with each shape-specific column checked only in its own
+  shape; `UNVERIFIED` wording rather than a rejection claim;
+  `LIVE_VERIFIED_ABSENT`; missing-probe, missing shape list, and unmapped-domain
+  failures; Budget mapped with and without `year`; each mapped variant must be
+  one the probe script sends; the CLI's exit codes and untruncated piped output;
+  and regressions for #16, v1.6.1 and #40, each flagged in the variant that omits
+  the column.
+- `test/tools.test.mjs`: one base-list guard per domain (`!includes("year")` for
+  NYCHA, `!includes("apt_pin")` for OGE), unit tests for both call shapes of
+  `nychaContractsColumns()` and `nycedcContractsColumns()`, and an offline
+  end-to-end test (stubbed `fetch`) that checks which columns each tool puts on
+  the wire with and without `fiscal_year`. The tests that treated the published
+  config as the authority for NYCHA and OGE response columns are removed.
 
 ## [1.6.2] - 2026-10-11
 

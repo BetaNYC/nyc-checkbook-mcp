@@ -12,7 +12,9 @@ Provenance (real API output only; nothing here is hand-written):
 
 This is a snapshot, not a live oracle. It goes stale whenever Checkbook changes.
 Variants the probe gained after 2026-10-16 (Contracts FY, pending FY, Spending
-issue_date, Budget year, Payroll calendar_year) are deliberately absent.
+issue_date, Budget year, Budget no year, Payroll calendar_year, Contracts_NYCHA
+contract_id, Contracts_NYCHA no criteria, Contracts_OGE contract_id) are
+deliberately absent: none has been sent live, so there is no real output to use.
 
 ===== Contracts registered/expense :: COLUMNS =====
 Provided response column 'zzz_invalid' value is not allowed for 'Registered Contracts(expense) All Years' domain. Valid values are 'contract_class,contract_includes_sub_vendors,mocs_registered,document_code,parent_contract_id,prime_contract_apt_pin,percent_covid_spending,percent_other_spending,prime_contract_award_method,prime_contract_current_amount,prime_contract_end_date,prime_contract_expense_category,prime_contract_id,prime_contract_industry,prime_contract_original_amount,prime_contract_pin,prime_contract_purpose,prime_contract_registration_date,prime_contract_start_date,prime_contract_type,prime_oca_number,prime_contract_version,prime_contracting_agency,prime_vendor,prime_vendor_mwbe_category,prime_vendor_spent_to_date,prime_woman_owned_business,prime_emerging_business,sub_contract_current_amount,sub_contract_end_date,sub_contract_industry,sub_contract_original_amount,sub_contract_purpose,sub_contract_reference_id,sub_contract_start_date,sub_vendor,sub_vendor_mwbe_category,sub_vendor_paid_to_date,sub_contract_status,sub_woman_owned_business,sub_emerging_business,vendor_record_type'.
