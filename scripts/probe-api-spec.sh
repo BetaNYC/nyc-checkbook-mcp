@@ -6,7 +6,7 @@
 # COMPLIANCE with the limits the Comptroller's office gave us (2026-07-28):
 #
 #   * 1 request per second      -> PACE below, default 1.5s, applied after every
-#                                  call. 26 probes ~= 40s total.
+#                                  call. 43 probes ~= 65s total.
 #   * 20,000 records per call   -> every probe asks for max_records=1. These are
 #                                  error-path probes; no result set is wanted.
 #   * no redirect following     -> curl does not follow redirects without -L.
@@ -41,13 +41,25 @@ probe_count=0
 probe () { # $1=label  $2=full request xml
   printf '\n===== %s =====\n' "$1" >> "$OUT"
 
-  local response status body
+  local response status body rc=0
   # -w appends the status on its own final line; no -L, deliberately.
   response=$(curl -s --max-time 60 -X POST "$API" \
     -H "Content-Type: application/xml" \
     -H "User-Agent: $UA" \
     --data-binary "$2" \
-    -w $'\n%{http_code}')
+    -w $'\n%{http_code}') || rc=$?
+  # A transport failure (e.g. curl exit 92, an HTTP/2 stream error, seen
+  # 2026-10-16) must abort with a record too; under set -e it used to kill the
+  # script silently, leaving an empty section and no ABORTED line.
+  if [ "$rc" -ne 0 ]; then
+    {
+      printf 'ABORTED: curl exit %d after %d successful probe(s).\n' "$rc" "$probe_count"
+      printf 'Probing stopped deliberately. See the header of %s.\n' "$0"
+    } >> "$OUT"
+    echo "ABORT: curl exit $rc on '$1' (after $probe_count OK). Transport error, not an HTTP status." >&2
+    echo "Retry a SINGLE request before running the full sweep again." >&2
+    exit 1
+  fi
   status="${response##*$'\n'}"
   body="${response%$'\n'*}"
 
@@ -77,14 +89,26 @@ crit () { # $1=label $2=type_of_data $3=extra criteria xml
   probe "$1 :: CRITERIA" "<request><type_of_data>$2</type_of_data><records_from>1</records_from><max_records>1</max_records><search_criteria>$3<criteria><name>zzz_invalid</name><type>value</type><value>x</value></criteria></search_criteria></request>"
 }
 
-cols () { # $1=label $2=type_of_data $3=extra criteria xml
-  probe "$1 :: COLUMNS" "<request><type_of_data>$2</type_of_data><records_from>1</records_from><max_records>1</max_records><search_criteria>$3</search_criteria><response_columns><column>zzz_invalid</column></response_columns></request>"
+cols () { # $1=label $2=type_of_data $3=extra criteria xml (may be empty)
+  # With no criteria, omit <search_criteria> entirely, exactly as buildRequestXml
+  # in src/checkbook.ts does, so the probe matches the request a tool sends.
+  local sc=""
+  if [ -n "$3" ]; then sc="<search_criteria>$3</search_criteria>"; fi
+  probe "$1 :: COLUMNS" "<request><type_of_data>$2</type_of_data><records_from>1</records_from><max_records>1</max_records>$sc<response_columns><column>zzz_invalid</column></response_columns></request>"
 }
 
 C_REG_EXP='<criteria><name>status</name><type>value</type><value>registered</value></criteria><criteria><name>category</name><type>value</type><value>expense</value></criteria>'
 C_REG_REV='<criteria><name>status</name><type>value</type><value>registered</value></criteria><criteria><name>category</name><type>value</type><value>revenue</value></criteria>'
 C_PEND='<criteria><name>status</name><type>value</type><value>pending</value></criteria><criteria><name>category</name><type>value</type><value>expense</value></criteria>'
+C_REG_ALL='<criteria><name>status</name><type>value</type><value>registered</value></criteria><criteria><name>category</name><type>value</type><value>all</value></criteria>'
+C_PEND_REV='<criteria><name>status</name><type>value</type><value>pending</value></criteria><criteria><name>category</name><type>value</type><value>revenue</value></criteria>'
+C_PEND_ALL='<criteria><name>status</name><type>value</type><value>pending</value></criteria><criteria><name>category</name><type>value</type><value>all</value></criteria>'
 FY='<criteria><name>fiscal_year</name><type>value</type><value>2025</value></criteria>'
+BUDGET_Y='<criteria><name>year</name><type>value</type><value>2025</value></criteria>'
+CAL_Y='<criteria><name>calendar_year</name><type>value</type><value>2025</value></criteria>'
+ISSUE_D='<criteria><name>issue_date</name><type>range</type><start>2025-01-01</start><end>2025-01-31</end></criteria>'
+NYCHA_V='<criteria><name>vendor_name</name><type>value</type><value>zzz</value></criteria>'
+CID='<criteria><name>contract_id</name><type>value</type><value>zzz</value></criteria>'
 
 crit "Contracts registered/expense" Contracts "$C_REG_EXP"
 cols "Contracts registered/expense" Contracts "$C_REG_EXP"
@@ -113,5 +137,32 @@ crit "Spending_NYCHA"  Spending_NYCHA  "$FY"
 cols "Spending_NYCHA"  Spending_NYCHA  "$FY"
 crit "Payroll_NYCHA"   Payroll_NYCHA   "$FY"
 cols "Payroll_NYCHA"   Payroll_NYCHA   "$FY"
+
+# Call-shape variants. The resolved domain, and so its column vocabulary, depends
+# on the criteria sent: with vs without fiscal_year, and the criterion a tool
+# actually uses. These match shapes the tools send. scripts/check-default-columns.mjs
+# checks every DEFAULT_COLUMNS list against every variant here (issue #40).
+cols "Contracts registered/expense FY" Contracts       "$C_REG_EXP$FY"
+cols "Contracts pending/expense FY"    Contracts       "$C_PEND$FY"
+cols "Contracts_OGE FY"                Contracts_OGE   "$C_REG_EXP$FY"
+cols "Contracts_NYCHA no FY"           Contracts_NYCHA "$NYCHA_V"
+cols "Contracts_NYCHA no criteria"     Contracts_NYCHA ""
+cols "Contracts_NYCHA contract_id"     Contracts_NYCHA "$CID"
+cols "Contracts_OGE contract_id"       Contracts_OGE   "$C_REG_EXP$CID"
+cols "Spending issue_date"             Spending        "$ISSUE_D"
+cols "Budget year"                     Budget          "$BUDGET_Y"
+cols "Budget no year"                  Budget          ""
+cols "Payroll calendar_year"           Payroll         "$CAL_Y"
+# Contracts category variants (issue #42): search_contracts sends status and
+# category on every call, and get_contract sends status + category + contract_id
+# with no fiscal_year. Each (status, category) resolves its own domain.
+cols "Contracts registered/revenue FY"          Contracts "$C_REG_REV$FY"
+cols "Contracts registered/revenue contract_id" Contracts "$C_REG_REV$CID"
+cols "Contracts registered/all"                 Contracts "$C_REG_ALL"
+cols "Contracts registered/all FY"              Contracts "$C_REG_ALL$FY"
+cols "Contracts pending/revenue"                Contracts "$C_PEND_REV"
+cols "Contracts pending/revenue FY"             Contracts "$C_PEND_REV$FY"
+cols "Contracts pending/all"                    Contracts "$C_PEND_ALL"
+cols "Contracts pending/all FY"                 Contracts "$C_PEND_ALL$FY"
 
 printf 'DONE (%d probes)\n' "$probe_count" >> "$OUT"

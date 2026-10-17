@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<!--
+  Real Checkbook NYC API reply, 2026-10-16 (one paced live request by the orchestrator, issue #42).
+  Same criteria, response_columns = contract_id only: rows ARE returned, yet the message is the same
+  code 1 "no results found" text, so that message is not a usable signal. Verbatim; only this
+  comment was added.
+-->
+<response>
+  <status>
+    <result>success</result>
+  </status>
+  <request_criteria>
+    <request>
+      <type_of_data>Contracts</type_of_data>
+      <records_from>1</records_from>
+      <max_records>1</max_records>
+      <search_criteria>
+        <criteria>
+          <name>status</name>
+          <type>value</type>
+          <value>registered</value>
+        </criteria>
+        <criteria>
+          <name>category</name>
+          <type>value</type>
+          <value>revenue</value>
+        </criteria>
+      </search_criteria>
+      <response_columns>
+        <column>contract_id</column>
+      </response_columns>
+    </request>
+  </request_criteria>
+  <result_records>
+    <record_count>12293</record_count>
+    <contract_transactions>
+      <transaction>
+        <contract_id>RCT186620208202671</contract_id>
+      </transaction>
+    </contract_transactions>
+  </result_records>
+</response>
+
+HTTP 200

@@ -13,6 +13,10 @@ import {
   VENDOR_NAME_UNSUPPORTED_MESSAGE,
   nycedcContractsCriteria,
   nychaContractsCriteria,
+  nycedcContractsColumns,
+  nychaContractsColumns,
+  NYCHA_FISCAL_YEAR_COLUMNS,
+  OGE_ALL_YEARS_COLUMNS,
 } from "../dist/tools.js";
 import { DEFAULT_COLUMNS, buildRequestXml } from "../dist/checkbook.js";
 
@@ -301,25 +305,120 @@ test("Contracts default columns include the documented lineage/registration colu
   }
 });
 
-test("contractsColumns appends sub-vendor columns only for registered + include_sub_vendors", () => {
+test("contractsColumns appends sub-vendor columns only for registered expense/all + include_sub_vendors", () => {
+  const reg = contractsCriteria({ status: "registered", category: "expense" });
   // Default (no sub-vendors): base Contracts columns, unchanged.
-  assert.deepEqual(contractsColumns("registered", false), DEFAULT_COLUMNS.Contracts);
+  assert.deepEqual(contractsColumns(reg, false), DEFAULT_COLUMNS.Contracts);
+  assert.deepEqual(contractsColumns(reg), DEFAULT_COLUMNS.Contracts);
 
   // Registered + include: base columns followed by the sub-vendor columns.
-  const enriched = contractsColumns("registered", true);
+  const enriched = contractsColumns(reg, true);
   assert.deepEqual(enriched, [...DEFAULT_COLUMNS.Contracts, ...SUB_VENDOR_COLUMNS]);
   // No duplicate columns introduced.
   assert.equal(new Set(enriched).size, enriched.length);
 
   // Pending never gets sub-vendor columns (different token scheme), even when asked.
-  assert.deepEqual(contractsColumns("pending", true), DEFAULT_COLUMNS.Contracts_pending);
-  assert.ok(!contractsColumns("pending", true).some((c) => c.startsWith("sub_")));
+  const pend = contractsCriteria({ status: "pending", category: "expense" });
+  assert.deepEqual(contractsColumns(pend, true), DEFAULT_COLUMNS.Contracts_pending);
+  assert.ok(!contractsColumns(pend, true).some((c) => c.startsWith("sub_")));
+});
+
+// ─── Contracts columns per (status, category, fiscal_year) — issue #42 ───────
+// The live API resolves a different domain per (status, category). Probe
+// 2026-10-16: registered/all lists the same prime_contract_* names as
+// registered/expense (sub_* included); registered/revenue lists a plain-name
+// vocabulary with no sub_*; every pending shape lists the pending/expense names.
+// fiscal_year never changes the selection. Whether each list is valid in its
+// live domain is checked by scripts/check-default-columns.mjs (and, against the
+// real fixture, by test/check-default-columns.test.mjs).
+const CONTRACT_SHAPES = [];
+for (const status of ["registered", "pending"]) {
+  for (const category of ["expense", "revenue", "all"]) {
+    for (const fy of [false, true]) {
+      for (const sub of [false, true]) CONTRACT_SHAPES.push({ status, category, fy, sub });
+    }
+  }
+}
+
+function expectedContractsColumns({ status, category, sub }) {
+  if (status === "pending") return DEFAULT_COLUMNS.Contracts_pending;
+  if (category === "revenue") return DEFAULT_COLUMNS.Contracts_revenue;
+  return sub ? [...DEFAULT_COLUMNS.Contracts, ...SUB_VENDOR_COLUMNS] : DEFAULT_COLUMNS.Contracts;
+}
+
+test("contractsColumns picks the list for every (status, category, fiscal_year, sub-vendor) shape (#42)", () => {
+  assert.equal(CONTRACT_SHAPES.length, 24);
+  for (const shape of CONTRACT_SHAPES) {
+    const input = { status: shape.status, category: shape.category, ...(shape.fy ? { fiscal_year: "2025" } : {}) };
+    const criteria = contractsCriteria(input);
+    assert.equal(criteria.some((c) => c.name === "fiscal_year"), shape.fy, JSON.stringify(shape));
+    assert.deepEqual(contractsColumns(criteria, shape.sub), expectedContractsColumns(shape), JSON.stringify(shape));
+  }
+});
+
+test("registered/revenue never sends a prime_contract_* or sub_* column (#42)", () => {
+  // The live failure: 'prime_contract_id' rejected for 'Registered Contracts(revenue) All Years'.
+  for (const fy of [false, true]) {
+    for (const sub of [false, true]) {
+      const criteria = contractsCriteria({ status: "registered", category: "revenue", ...(fy ? { fiscal_year: "2025" } : {}) });
+      const cols = contractsColumns(criteria, sub);
+      assert.ok(!cols.some((c) => c.startsWith("prime_contract") || c.startsWith("sub_")), `fy=${fy} sub=${sub}`);
+      assert.ok(!cols.includes("year"), "year is listed only with fiscal_year; not sent");
+      assert.ok(cols.includes("contract_id"));
+    }
+  }
+  assert.equal(new Set(DEFAULT_COLUMNS.Contracts_revenue).size, DEFAULT_COLUMNS.Contracts_revenue.length);
+});
+
+test("contractsColumns treats missing status/category as the tool defaults (registered, expense)", () => {
+  assert.deepEqual(contractsColumns([]), DEFAULT_COLUMNS.Contracts);
+  assert.deepEqual(contractsColumns([{ name: "category", type: "value", value: "revenue" }]), DEFAULT_COLUMNS.Contracts_revenue);
+  assert.deepEqual(contractsColumns([{ name: "status", type: "value", value: "pending" }]), DEFAULT_COLUMNS.Contracts_pending);
+});
+
+test("search_contracts and get_contract send the (status, category) columns on the wire (#42)", async () => {
+  const emptyOk =
+    "<response><status><result>success</result></status>" +
+    "<result_records><record_count>0</record_count></result_records></response>";
+  const bodies = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    bodies.push(String(init?.body ?? ""));
+    return new Response(emptyOk, { status: 200 });
+  };
+  const server = new McpServer({ name: "nyc-checkbook-mcp", version: "1.0.0" });
+  registerTools(server);
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const columnsSent = (xml) => [...xml.matchAll(/<column>([^<]*)<\/column>/g)].map((m) => m[1]);
+  try {
+    const calls = [
+      ["search_contracts", { category: "revenue", include_sub_vendors: true, page_size: 1 }, DEFAULT_COLUMNS.Contracts_revenue],
+      ["search_contracts", { category: "all", include_sub_vendors: true, page_size: 1 }, [...DEFAULT_COLUMNS.Contracts, ...SUB_VENDOR_COLUMNS]],
+      ["search_contracts", { status: "pending", category: "revenue", page_size: 1 }, DEFAULT_COLUMNS.Contracts_pending],
+      ["get_contract", { contract_id: "X1", category: "revenue" }, DEFAULT_COLUMNS.Contracts_revenue],
+      ["get_contract", { contract_id: "X1" }, DEFAULT_COLUMNS.Contracts],
+      ["get_contract", { contract_id: "X1", status: "pending", category: "revenue" }, DEFAULT_COLUMNS.Contracts_pending],
+    ];
+    for (const [name, args, expected] of calls) {
+      const before = bodies.length;
+      const res = await client.callTool({ name, arguments: args });
+      assert.notEqual(res.isError, true, `${name} ${JSON.stringify(args)}`);
+      assert.equal(bodies.length, before + 1);
+      assert.deepEqual(columnsSent(bodies[bodies.length - 1]), expected, `${name} ${JSON.stringify(args)}`);
+    }
+  } finally {
+    globalThis.fetch = original;
+    await client.close();
+    await server.close();
+  }
 });
 
 test("request XML emits sub-vendor <column> elements when enriched", () => {
   const xml = buildRequestXml({
     type_of_data: "Contracts",
-    response_columns: contractsColumns("registered", true),
+    response_columns: contractsColumns(contractsCriteria({ status: "registered", category: "expense" }), true),
   });
   assert.match(xml, /<column>sub_vendor<\/column>/);
   assert.match(xml, /<column>sub_vendor_mwbe_category<\/column>/);
@@ -341,40 +440,81 @@ test("contractsCriteria is unchanged by the column additions (no sub-vendor crit
 });
 
 // ─── NYCEDC (OGE) + NYCHA contract routing (issue #7) ────────────────────────
-// Domain tokens, criteria names, and response columns confirmed against the
-// CheckbookNYC API config (checkbook_api/src/config/contracts_oge.json,
-// contracts_nycha.json) — 2026-07-09.
+// Domain tokens and criteria names come from the CheckbookNYC API config
+// (checkbook_api/src/config/contracts_oge.json, contracts_nycha.json). Response
+// columns do NOT: that config listed `year` (NYCHA) and `apt_pin` (OGE)
+// unconditionally, and the live API rejects each for one call shape (#40). The
+// authority for response columns is the live API's valid-values lists, checked by
+// scripts/check-default-columns.mjs against fresh probe output (pre-release step,
+// scripts/README.md). Do not add tests here that copy column lists from the config.
 
-test("Contracts_OGE default columns are the documented OGE response tokens", () => {
-  for (const col of [
-    "other_government_entities",
-    "prime_vendor",
-    "contract_id",
-    "entity_contract_number",
-    "commodity_line",
-    "budget_name",
-    "expense_category",
-  ]) {
-    assert.ok(DEFAULT_COLUMNS.Contracts_OGE.includes(col), `missing OGE column: ${col}`);
-  }
-  // OGE has no citywide prime_ / release_ tokens.
-  assert.ok(!DEFAULT_COLUMNS.Contracts_OGE.some((c) => c.startsWith("release_")));
+// One regression guard per domain for #40: the BASE list is sent for every call
+// shape, so it must not carry a column the live API rejects for any shape.
+test("Contracts_NYCHA base list does not request 'year' (#40)", () => {
+  // Rejected on a vendor_name-only search; listed as valid only with fiscal_year.
+  assert.ok(!DEFAULT_COLUMNS.Contracts_NYCHA.includes("year"));
 });
 
-test("Contracts_NYCHA default columns are the documented NYCHA response tokens", () => {
-  for (const col of [
-    "release_current_amount",
-    "release_original_amount",
-    "release_invoiced_amount",
-    "contract_current_amount",
-    "funding_source",
-    "responsibility_center",
-    "purchase_order_type",
-    "program",
-    "project",
-    "grant_name",
-  ]) {
-    assert.ok(DEFAULT_COLUMNS.Contracts_NYCHA.includes(col), `missing NYCHA column: ${col}`);
+test("Contracts_OGE base list does not request 'apt_pin' (#40)", () => {
+  // Rejected on a fiscal_year search; listed as valid only without fiscal_year.
+  assert.ok(!DEFAULT_COLUMNS.Contracts_OGE.includes("apt_pin"));
+});
+
+test("NYCHA columns depend on call shape: 'year' only with fiscal_year (#40)", () => {
+  assert.deepEqual(NYCHA_FISCAL_YEAR_COLUMNS, ["year"]);
+  const withFy = nychaContractsColumns(nychaContractsCriteria({ fiscal_year: "2025", vendor_name: "ACME" }));
+  assert.deepEqual(withFy, [...DEFAULT_COLUMNS.Contracts_NYCHA, ...NYCHA_FISCAL_YEAR_COLUMNS]);
+  for (const input of [{}, { vendor_name: "ACME" }, { contract_id: "X" }, { fiscal_year: "" }]) {
+    const cols = nychaContractsColumns(nychaContractsCriteria(input));
+    assert.deepEqual(cols, DEFAULT_COLUMNS.Contracts_NYCHA, JSON.stringify(input));
+  }
+});
+
+test("OGE columns depend on call shape: 'apt_pin' only without fiscal_year (#40)", () => {
+  assert.deepEqual(OGE_ALL_YEARS_COLUMNS, ["apt_pin"]);
+  const withFy = nycedcContractsColumns(nycedcContractsCriteria({ fiscal_year: "2025" }));
+  assert.deepEqual(withFy, DEFAULT_COLUMNS.Contracts_OGE);
+  for (const input of [{}, { vendor_name: "ACME" }, { contract_id: "X" }, { fiscal_year: "" }]) {
+    const cols = nycedcContractsColumns(nycedcContractsCriteria(input));
+    assert.deepEqual(cols, [...DEFAULT_COLUMNS.Contracts_OGE, ...OGE_ALL_YEARS_COLUMNS], JSON.stringify(input));
+  }
+});
+
+test("search_nycha_contracts / search_nycedc_contracts send the shape's columns on the wire (#40)", async () => {
+  // Offline: fetch is stubbed with a successful empty response.
+  const emptyOk =
+    "<response><status><result>success</result></status>" +
+    "<result_records><record_count>0</record_count></result_records></response>";
+  const bodies = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    bodies.push(String(init?.body ?? ""));
+    return new Response(emptyOk, { status: 200 });
+  };
+  const server = new McpServer({ name: "nyc-checkbook-mcp", version: "1.0.0" });
+  registerTools(server);
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const calls = [
+      ["search_nycha_contracts", { fiscal_year: "2025" }, "year", true],
+      ["search_nycha_contracts", { vendor_name: "ACME" }, "year", false],
+      ["search_nycedc_contracts", { fiscal_year: "2025" }, "apt_pin", false],
+      ["search_nycedc_contracts", { vendor_name: "ACME" }, "apt_pin", true],
+    ];
+    for (const [name, args, column, expected] of calls) {
+      const before = bodies.length;
+      const res = await client.callTool({ name, arguments: { ...args, page_size: 1 } });
+      assert.notEqual(res.isError, true, `${name} ${JSON.stringify(args)}`);
+      assert.equal(bodies.length, before + 1);
+      const sent = bodies[bodies.length - 1].includes(`<column>${column}</column>`);
+      assert.equal(sent, expected, `${name} ${JSON.stringify(args)}: <column>${column}</column>`);
+    }
+  } finally {
+    globalThis.fetch = original;
+    await client.close();
+    await server.close();
   }
 });
 

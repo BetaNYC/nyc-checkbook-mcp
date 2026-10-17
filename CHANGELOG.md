@@ -5,6 +5,217 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.3] - 2026-10-16
+
+### Fixed
+
+- **`search_nycha_contracts` and `search_nycedc_contracts` failed for one call
+  shape each (#40).** Each default response-column list carried a column the
+  live API accepts for one call shape and rejects for another, and one rejected
+  column fails the whole request. Both columns come from the published API
+  config, which lists them unconditionally. The failing shapes:
+  - NYCHA requested `year`. The live API lists `year` as valid when `fiscal_year`
+    is sent, and rejected it on a `vendor_name`-only search. So a NYCHA search
+    without `fiscal_year` failed; one with `fiscal_year` did not.
+  - OGE requested `apt_pin`. The live API lists `apt_pin` as valid without
+    `fiscal_year`, and rejected it on a `fiscal_year` search. So an NYCEDC search
+    with `fiscal_year` failed; one without it did not.
+
+  Both have been in the default lists since the tools were added in 1.2.0 (#7).
+- **Response columns now depend on the call shape**, the way `contractsColumns()`
+  already does for citywide contracts. The base lists in `DEFAULT_COLUMNS` carry
+  neither column. `nychaContractsColumns()` appends `NYCHA_FISCAL_YEAR_COLUMNS`
+  (`year`) only when `fiscal_year` is among the criteria sent, and
+  `nycedcContractsColumns()` appends `OGE_ALL_YEARS_COLUMNS` (`apt_pin`) only when
+  it is not. NYCHA results therefore carry `year` when filtered by `fiscal_year`,
+  and no year field otherwise. NYCEDC results carry `apt_pin` only without
+  `fiscal_year`.
+- **Verified live on 2026-10-16** against this release's code, one request at a
+  time at 3 s pacing, no 403s. `bash scripts/probe-api-spec.sh` returned 35/35
+  HTTP 200 and `npm run check:columns` passed every list in every probed shape.
+  Then one paced tool call per shape, each HTTP 200 with no 1106:
+  `search_nycha_contracts` with `vendor_name` only (the shape #40 broke) returned
+  a record without `year`; with `fiscal_year` it returned a record with `year`.
+  `search_nycedc_contracts` with `fiscal_year` (the shape #40 broke) returned
+  records; with `vendor_name` only (sending `apt_pin`) it was accepted and
+  matched 0 records. An earlier check on 2026-10-15 sent `fiscal_year` for both
+  tools, so it proved the OGE fix only. That verification predates the #42 fix
+  below and does not cover it.
+- **`search_contracts` and `get_contract` failed for every registered revenue
+  contract (#42).** Both sent the registered/expense column list
+  (`prime_contract_*`) for every `category`. `status=registered, category=revenue`
+  resolves a different domain, `Registered Contracts(revenue)`, whose vocabulary
+  uses plain names, and the live API rejected the first column:
+  `search_contracts({category:"revenue"})` returned "Provided response column
+  'prime_contract_id' value is not allowed for 'Registered Contracts(revenue) All
+  Years' domain" (2026-10-16). 18 of the 20 expense columns are absent from that
+  domain's list. `contractsColumns()` now takes the criteria a call sends and
+  picks the list per `(status, category)`: registered `expense`/`all` keep
+  `DEFAULT_COLUMNS.Contracts` (the registered/all domain lists the same names,
+  `sub_*` included); registered `revenue` uses the new
+  `DEFAULT_COLUMNS.Contracts_revenue`; every `pending` category keeps
+  `Contracts_pending` (all pending domains list the same names). `fiscal_year`
+  changes nothing: each chosen column is listed both with and without it. The
+  revenue list (16 columns) carries the equivalent fields (id, vendor, purpose,
+  agency, amounts, dates, award method, type, M/WBE, industry, PIN, WBE/EBE
+  flags, version) under that domain's own names. It has no spent-to-date or sub-vendor
+  fields, because the domain lists none, so `include_sub_vendors` is ignored
+  for revenue, as it already was for pending. `get_contract` uses the same
+  selection.
+- **`contract_class` is not requested for registered revenue contracts (#42).**
+  It is in both live valid lists, so the column checker passed it, but sending
+  it makes the API return no rows. The reply is a success with
+  `record_count` 12293 (no `fiscal_year`) or 399 (`fiscal_year` 2025) and no
+  transactions (live, 2026-10-16). A bisect over the first revenue list, in 9
+  paced calls, isolated it: `contract_id` + `contract_class` returned nothing,
+  and every half without `contract_class` returned rows. The first revenue list
+  shipped on this branch included it, so `search_contracts` for revenue returned
+  `records: []` alongside a count of thousands. `contract_class` stays in the
+  expense/all list, where the live `category: "all"` call returned rows with it.
+- **A silent empty is now an error, not an empty page (#42).** When the API
+  reports `record_count` N > 0, the requested `records_from` is at most N, and
+  no rows come back, `callCheckbookApi()` throws a `CheckbookApiError` of kind
+  `silent-empty`. The tool result is `isError` and says that the API matched N
+  records but returned none, names the causes seen so far (a row-suppressing
+  response column, and the upstream revenue + `fiscal_year` defect) without
+  asserting either, and says this does not mean no records exist. It
+  is an error rather than a warning field for the same reason as #21: a result
+  that cannot be the true answer must not be readable as one, and a caller
+  given `records: []` will report "none". A page past the end and a true zero
+  are still normal empty results. The reply's message (code 1, "no results
+  found") is not used as the signal, because the API sends the same message
+  when it does return rows.
+- **Verification status for #42.** Live on 2026-10-16, against the list that
+  still had `contract_class`: the full 43-request probe returned HTTP 200 for
+  every variant (one transport failure, retried, below) and `npm run
+  check:columns` exited 0 for every list. `search_contracts` with
+  `category: "all"` and with `status: "pending", category: "revenue"` returned
+  records. Registered revenue returned the silent empty above. Then, against
+  this release's 16-column list, one paced call per shape (3 s apart, no 403s),
+  each returning at least one row: `search_contracts` registered expense (with
+  and without `fiscal_year`, and with `include_sub_vendors`), registered revenue
+  without `fiscal_year`, `all` (with and without), pending expense, revenue and
+  `all`; `get_contract` for a revenue and an expense contract;
+  `search_nycha_contracts` by `vendor_name` and by `fiscal_year`;
+  `search_nycedc_contracts` by `fiscal_year` and by `contract_id`.
+- **Known upstream limitation: registered revenue with `fiscal_year` returns
+  no rows.** The Checkbook API reports a match count (399 for FY2025) but sends
+  no rows, whatever response columns are requested, including `contract_id`
+  alone (live, 2026-10-16, bisected over every column). It is a server-side
+  defect this release cannot fix. `search_contracts` **fails fast** on that
+  shape: when status is `registered` (the default), category is `revenue`, and
+  `fiscal_year` is sent, it returns `isError` with guidance (a known upstream
+  limitation; omit `fiscal_year` and filter by date range) and sends no
+  request, so no call is spent from the 1 req/sec budget on a reply that cannot
+  return rows. Any other path to that reply still hits the silent-empty guard.
+  Search registered revenue without `fiscal_year` and filter by dates instead.
+- **`scripts/probe-api-spec.sh` no longer dies silently on a transport
+  failure.** A curl failure (exit 92, an HTTP/2 stream error, seen on probe 36
+  on 2026-10-16) killed the script under `set -e`, leaving an empty section and
+  no `ABORTED` line. It now writes `ABORTED: curl exit N after M successful
+  probe(s).` and exits 1, like a non-200.
+- **Record field names now differ by shape**, because records are returned as
+  the API sends them, without normalization: registered expense/all use
+  `prime_contract_*` names, while registered revenue and pending use plain names
+  (`contract_id`, `purpose`, `agency`, ...). This was already true for pending;
+  it is now true for revenue, which returned no records at all before.
+
+### Added
+
+- **`scripts/check-default-columns.mjs` (`npm run check:columns`)**: one checker
+  for every default response-column list, per call shape, plus
+  `SUB_VENDOR_COLUMNS`. It reads `probe-results.txt` and reports any column absent
+  from the live valid-values list of a probe variant mapped to that shape. Each
+  shape's list is checked only against that shape's variants, so NYCHA's `year`
+  is checked against the `fiscal_year` variant and OGE's `apt_pin` against the
+  variants without it. It makes no network requests. Absence is reported as
+  `UNVERIFIED` rather than as rejected, since the probe lists are a floor, not a
+  ceiling, but it still fails the check. It also fails on a missing or aborted
+  probe variant; on a `COLUMNS` section whose text is not the 1106 response-column
+  error (for example a 1101 request-parameter error, which lists criteria, not
+  columns); and on a `DEFAULT_COLUMNS` key with no mapping. Every run prints the
+  call shapes no probe covers. It replaces patching this defect class by hand
+  (#16, v1.6.1, #40).
+- **`scripts/probe-api-spec.sh` sends nineteen call-shape variants** (24 to 43
+  requests, still paced at 1.5 s, ~65 s), because the column vocabulary depends
+  on the criteria sent: citywide and pending contracts with `fiscal_year`;
+  registered revenue with `fiscal_year` and with `contract_id` (the
+  `get_contract` shape); registered and pending `all`, and pending `revenue`,
+  each with and without `fiscal_year` (#42); OGE
+  with `fiscal_year` and with `contract_id`; NYCHA by `vendor_name` without
+  `fiscal_year`, by `contract_id`, and with no criteria; Spending by
+  `issue_date`; Budget with its `year` criterion and with no criteria; and
+  Payroll by `calendar_year`. A variant with no criteria omits
+  `<search_criteria>` entirely, as `buildRequestXml` does.
+
+### Documentation
+
+- The `search_nycha_contracts` description and README say that results carry a
+  year field only when filtering by `fiscal_year`, and none otherwise.
+- The `search_contracts` `category` and `include_sub_vendors` descriptions, the
+  `get_contract` description, and the README say which field names each
+  `(status, category)` returns and that `include_sub_vendors` is ignored for
+  revenue (#42). `scripts/README.md` adds the revenue vocabulary (item 7) and the
+  silent-empty `contract_class` (item 8, a class the checker cannot detect) to
+  the defects list, noting that whether the published docs describe them was
+  not checked. "What a pass does not cover" now says a pass proves acceptance,
+  not rows. README Releases adds a step after `check:columns`: one paced live
+  call per contract shape, each returning at least one row.
+- README Releases has a pre-release step: run the probe once, then
+  `npm run check:columns`, before tagging. `npm run check:columns` is added to the
+  Development table, and CONTRIBUTING covers column and call-shape changes.
+- `scripts/README.md`: NYCHA `year` and OGE `apt_pin` are added to the
+  documentation-defects list (eight entries now, with #42's two below; covering docs and config), each
+  naming the call shape that failed. New sections cover the checker and how
+  domain resolution depends on criteria.
+- `src/checkbook.ts`: the OGE and NYCHA comments say the base lists are derived
+  from the config and corrected against the live API, that the shape-specific
+  column is appended in `src/tools.ts`, and not to add it to the base list. The
+  citywide `Contracts` comment covers citywide only.
+
+### Tests
+
+- `test/check-default-columns.test.mjs` (23 tests, offline) runs against
+  `test/fixtures/probe-results-sample.txt`, which is real API output with its
+  provenance in its header. Covered: the parser (including an aborted section, and
+  a `COLUMNS` section holding a 1101 error, which must be `UNPARSED-PROBE`);
+  per-shape mapping, with each shape-specific column checked only in its own
+  shape; `UNVERIFIED` wording rather than a rejection claim;
+  `LIVE_VERIFIED_ABSENT`; missing-probe, missing shape list, and unmapped-domain
+  failures; Budget mapped with and without `year`; each mapped variant must be
+  one the probe script sends; the CLI's exit codes and untruncated piped output;
+  and regressions for #16, v1.6.1 and #40, each flagged in the variant that omits
+  the column. For #42: every column `contractsColumns()` sends for ten
+  `(status, category, fiscal_year)` shapes is checked against that shape's real
+  list in the fixture; `COLUMN_CHECKS` is pinned to the lists the tool sends; and
+  sending the expense list for revenue is flagged as 18 unverified columns. The
+  fixture gains the seven real sections from the 2026-10-16 #42 probes.
+- `test/tools.test.mjs`: one base-list guard per domain (`!includes("year")` for
+  NYCHA, `!includes("apt_pin")` for OGE), unit tests for both call shapes of
+  `nychaContractsColumns()` and `nycedcContractsColumns()`, and an offline
+  end-to-end test (stubbed `fetch`) that checks which columns each tool puts on
+  the wire with and without `fiscal_year`. The tests that treated the published
+  config as the authority for NYCHA and OGE response columns are removed.
+  `test/silent-empty.test.mjs` (8 tests, offline) uses two real 2026-10-16
+  replies as fixtures, `contracts-revenue-silent-empty.xml` (12293 matched, no
+  rows) and `contracts-revenue-contract-id-only.xml` (rows, same message). It
+  covers: the guard's boundaries (true zero, a page past the end, rows
+  returned); `callCheckbookApi` rejecting the real reply; `search_contracts` and
+  `get_contract` returning `isError` with the count; `contract_class` absent
+  from every revenue shape; and the probe script's transport abort, run with a
+  fake `curl` that exits 92. Two more cover the revenue + `fiscal_year`
+  fail-fast: the shape predicate, and the tool refusing with guidance while the
+  stubbed `fetch` is never called. Mutation-checked: re-adding `contract_class`
+  fails 1 test, disabling the guard fails 2, reverting the probe fix fails 1,
+  disabling the fail-fast fails 1, and restoring the old error text fails 1.
+  For #42: `contractsColumns()` is tested for all 24
+  `(status, category, fiscal_year, include_sub_vendors)` combinations, plus a
+  guard that registered revenue never sends a `prime_contract_*`, `sub_*` or
+  `year` column, and an offline end-to-end test that checks the columns
+  `search_contracts` and `get_contract` put on the wire for revenue, all and
+  pending. Mutation-checked: making the selection ignore `category` fails 6
+  tests; restoring the hardcoded expense list in `get_contract` fails 1.
+
 ## [1.6.2] - 2026-10-11
 
 ### Fixed

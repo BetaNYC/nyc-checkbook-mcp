@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<!--
+  Real Checkbook NYC API reply, 2026-10-16 (one paced live request by the orchestrator, issue #42).
+  Request: status=registered, category=revenue, max_records=1, the 17-column Contracts_revenue list
+  that included contract_class. The API matched 12293 records and returned no transaction rows.
+  Body below is verbatim; only this comment was added.
+-->
+<response>
+  <status>
+    <result>success</result>
+    <messages>
+      <message>
+        <code>1</code>
+        <description>The request is a success but there are no results found for given search criteria.</description>
+      </message>
+    </messages>
+  </status>
+  <request_criteria>
+    <request>
+      <type_of_data>Contracts</type_of_data>
+      <records_from>1</records_from>
+      <max_records>1</max_records>
+      <search_criteria>
+        <criteria>
+          <name>status</name>
+          <type>value</type>
+          <value>registered</value>
+        </criteria>
+        <criteria>
+          <name>category</name>
+          <type>value</type>
+          <value>revenue</value>
+        </criteria>
+      </search_criteria>
+      <response_columns>
+        <column>contract_id</column>
+        <column>prime_vendor</column>
+        <column>purpose</column>
+        <column>agency</column>
+        <column>current_amount</column>
+        <column>original_amount</column>
+        <column>start_date</column>
+        <column>end_date</column>
+        <column>award_method</column>
+        <column>contract_type</column>
+        <column>prime_mwbe_category</column>
+        <column>industry</column>
+        <column>pin</column>
+        <column>woman_owned_business</column>
+        <column>emerging_business</column>
+        <column>contract_class</column>
+        <column>version</column>
+      </response_columns>
+    </request>
+  </request_criteria>
+  <result_records>
+    <record_count>12293</record_count>
+  </result_records>
+</response>

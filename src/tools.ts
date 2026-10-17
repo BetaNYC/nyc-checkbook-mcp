@@ -193,6 +193,29 @@ const CONTRACT_VALUE_FIELDS: Record<string, string> = {
  * contracts) or send an invalid param (which yields an opaque 1101 error), the
  * handler stops and explains the supported paths.
  */
+/**
+ * Registered revenue + fiscal_year is a known upstream defect (#42): the API
+ * reports a match count (399 for FY2025) and returns no rows for ANY response
+ * column set, contract_id alone included (live, 2026-10-16). search_contracts
+ * refuses that shape before sending a request, rather than spending one from
+ * the 1 req/sec budget on a reply that can only be the silent-empty error.
+ */
+export const REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE =
+  "search_contracts cannot search registered revenue contracts by fiscal_year: " +
+  "this is a known Checkbook NYC API limitation (#42). The API reports a match " +
+  "count for that shape but returns no records, whatever columns are requested. " +
+  "Omit fiscal_year and filter by date range instead (start_date_from/_to, " +
+  "end_date_from/_to, or registration_date_from/_to). No request was sent.";
+
+/** True for the shape REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE refuses, judged from the criteria to be sent. */
+export function isRegisteredRevenueFiscalYear(criteria: Criteria[]): boolean {
+  return (
+    (criterionValue(criteria, "status") ?? "registered") === "registered" &&
+    criterionValue(criteria, "category") === "revenue" &&
+    sendsFiscalYear(criteria)
+  );
+}
+
 export const VENDOR_NAME_UNSUPPORTED_MESSAGE =
   "search_contracts cannot filter by vendor name: the Checkbook NYC contracts " +
   "API filters vendors only by 'vendor_code', and offers no name→code lookup. " +
@@ -304,24 +327,77 @@ export const SUB_VENDOR_COLUMNS: string[] = [
   "sub_emerging_business",
 ];
 
+function criterionValue(criteria: Criteria[], name: string): string | undefined {
+  return criteria.find((x) => x.name === name)?.value;
+}
+
 /**
- * Select the response columns for a contracts search.
+ * Select the response columns for a citywide Contracts call (search_contracts,
+ * get_contract), given the criteria it sends (issue #42).
  *
- * Base set is DEFAULT_COLUMNS.Contracts (registered) or Contracts_pending.
- * Sub-vendor columns are appended only for registered contracts when
- * include_sub_vendors is requested — the pending column set uses a different,
- * incompatible token scheme.
+ * The live API resolves a different domain per (status, category), and the
+ * column vocabularies differ (probe 2026-10-16):
+ *
+ *   registered + expense | all  -> DEFAULT_COLUMNS.Contracts (prime_contract_*)
+ *   registered + revenue        -> DEFAULT_COLUMNS.Contracts_revenue
+ *   pending + any category      -> DEFAULT_COLUMNS.Contracts_pending
+ *
+ * fiscal_year does not change the selection: for every shape, each chosen
+ * column is in the live list both with and without fiscal_year.
+ *
+ * Sub-vendor columns are appended only for registered expense/all when
+ * include_sub_vendors is requested. The pending and registered/revenue domains
+ * list no sub_* columns, so the flag is ignored there.
+ *
+ * Decided from the built criteria, not the tool input, so what is decided
+ * matches what is sent. A missing status/category means the tools' defaults
+ * (registered, expense).
  */
-export function contractsColumns(
-  status: "registered" | "pending",
-  includeSubVendors: boolean
-): string[] {
-  const base =
-    status === "pending" ? DEFAULT_COLUMNS["Contracts_pending"] : DEFAULT_COLUMNS["Contracts"];
-  if (includeSubVendors && status !== "pending") {
-    return [...base, ...SUB_VENDOR_COLUMNS];
-  }
-  return base;
+export function contractsColumns(criteria: Criteria[], includeSubVendors = false): string[] {
+  const status = criterionValue(criteria, "status") ?? "registered";
+  const category = criterionValue(criteria, "category") ?? "expense";
+  if (status === "pending") return DEFAULT_COLUMNS["Contracts_pending"];
+  if (category === "revenue") return DEFAULT_COLUMNS["Contracts_revenue"];
+  const base = DEFAULT_COLUMNS["Contracts"];
+  return includeSubVendors ? [...base, ...SUB_VENDOR_COLUMNS] : base;
+}
+
+// ─── Call-shape-dependent columns (issue #40) ────────────────────────────────
+// The live API resolves a different column vocabulary for the same type_of_data
+// depending on whether fiscal_year is among the criteria sent. These columns are
+// valid in one shape only, so they are added for that shape and never otherwise.
+// Source: the live API's own valid-values lists, never the published config
+// (which lists both unconditionally). Checked by scripts/check-default-columns.mjs
+// against the probe variant for each shape.
+
+/**
+ * Contracts_NYCHA columns valid only WITH fiscal_year. Listed by the live
+ * 'Contracts_nycha' domain when fiscal_year is sent (probe 2026-10-16); rejected
+ * with 1106 on a vendor_name-only search (2026-10-15).
+ */
+export const NYCHA_FISCAL_YEAR_COLUMNS: string[] = ["year"];
+
+/**
+ * Contracts_OGE columns valid only WITHOUT fiscal_year. Listed by
+ * 'Registered Contracts_oge(expense) All Years' (probe 2026-10-16); rejected with
+ * 1106 by 'Registered Contracts_oge(expense)' on a fiscal_year search (2026-10-15).
+ */
+export const OGE_ALL_YEARS_COLUMNS: string[] = ["apt_pin"];
+
+function sendsFiscalYear(criteria: Criteria[]): boolean {
+  return criteria.some((c) => c.name === "fiscal_year");
+}
+
+/** Response columns for a NYCHA contracts search, given the criteria it sends. */
+export function nychaContractsColumns(criteria: Criteria[]): string[] {
+  const base = DEFAULT_COLUMNS["Contracts_NYCHA"];
+  return sendsFiscalYear(criteria) ? [...base, ...NYCHA_FISCAL_YEAR_COLUMNS] : base;
+}
+
+/** Response columns for an NYCEDC/OGE contracts search, given the criteria it sends. */
+export function nycedcContractsColumns(criteria: Criteria[]): string[] {
+  const base = DEFAULT_COLUMNS["Contracts_OGE"];
+  return sendsFiscalYear(criteria) ? base : [...base, ...OGE_ALL_YEARS_COLUMNS];
 }
 
 export function contractsCriteria(input: ContractsSearchInput): Criteria[] {
@@ -598,7 +674,9 @@ export function registerTools(server: McpServer): void {
         "Filter by agency, vendor_code, contract ID, date range, amount range, industry, MWBE category, and more. " +
         "NOTE: the contracts API has NO vendor-name filter — vendors are filtered only by vendor_code. " +
         "To find contracts by vendor NAME, use search_spending (payee_name) for checks paid to a named vendor. " +
-        "Many contracts are held by resellers, so a product/software name may not match the contract's own vendor.",
+        "Many contracts are held by resellers, so a product/software name may not match the contract's own vendor. " +
+        "KNOWN API LIMITATION: registered revenue contracts (category 'revenue') with fiscal_year return no rows " +
+        "from Checkbook NYC (a match count, no records), so the tool refuses that combination without sending a request; omit fiscal_year and filter by dates instead.",
       inputSchema: strictSchema({
         status: z
           .enum(["registered", "pending"])
@@ -609,7 +687,13 @@ export function registerTools(server: McpServer): void {
           .enum(["expense", "revenue", "all"])
           .optional()
           .default("expense")
-          .describe("Contract category (default: expense)"),
+          .describe(
+            "Contract category (default: expense). Record field names follow the API's own " +
+              "domain and differ by shape: registered expense/all use prime_contract_* names " +
+              "(prime_contract_id, prime_contract_purpose, ...); registered revenue and every " +
+              "pending search use plain names (contract_id, purpose, agency, ...). Records are " +
+              "returned as the API sends them, not normalized."
+          ),
         fiscal_year: fiscalYearSchema,
         agency_code: z
           .string()
@@ -713,7 +797,8 @@ export function registerTools(server: McpServer): void {
           .describe(
             "Include sub-vendor / subcontractor detail columns (sub_vendor, " +
               "sub_vendor_mwbe_category, sub_contract_current_amount, etc.) in the response. " +
-              "Applies to registered contracts only; ignored for status='pending'."
+              "Applies to registered expense/all contracts only; ignored for status='pending' " +
+              "and for category='revenue', whose domains list no sub-vendor columns."
           ),
         page: pageSchema,
         page_size: pageSizeSchema,
@@ -724,10 +809,15 @@ export function registerTools(server: McpServer): void {
         if (input.vendor_name) {
           throw new Error(VENDOR_NAME_UNSUPPORTED_MESSAGE);
         }
+        const criteria = contractsCriteria(input);
+        if (isRegisteredRevenueFiscalYear(criteria)) {
+          // Fail fast, no network call (#42 upstream limitation).
+          throw new Error(REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE);
+        }
         return runSearch(
           "Contracts",
-          contractsColumns(input.status, input.include_sub_vendors),
-          contractsCriteria(input),
+          contractsColumns(criteria, input.include_sub_vendors),
+          criteria,
           input.page,
           input.page_size
         );
@@ -739,7 +829,9 @@ export function registerTools(server: McpServer): void {
     {
       description:
         "Look up a single NYC contract by its contract ID. Returns full contract details. " +
-        "Use this after finding a contract ID via search_contracts or search_spending.",
+        "Use this after finding a contract ID via search_contracts or search_spending. " +
+        "Field names follow status/category, as in search_contracts: registered expense uses " +
+        "prime_contract_* names, registered revenue and pending use plain names (contract_id, purpose, ...).",
       inputSchema: strictSchema({
         contract_id: z
           .string()
@@ -758,16 +850,19 @@ export function registerTools(server: McpServer): void {
     },
     async ({ contract_id, status, category }) =>
       guard(async () => {
+        const criteria: Criteria[] = [
+          { name: "status", type: "value", value: status },
+          { name: "category", type: "value", value: category },
+          { name: "contract_id", type: "value", value: contract_id },
+        ];
         const result = await callCheckbookApi({
           type_of_data: "Contracts",
           records_from: 1,
           max_records: 10,
-          criteria: [
-            { name: "status", type: "value", value: status },
-            { name: "category", type: "value", value: category },
-            { name: "contract_id", type: "value", value: contract_id },
-          ],
-          response_columns: DEFAULT_COLUMNS["Contracts"],
+          criteria,
+          // Per (status, category), as search_contracts does (#42). Sending the
+          // expense list for category=revenue failed every revenue lookup.
+          response_columns: contractsColumns(criteria),
         });
         // No `error` field: an upstream failure throws (issue #21) and is
         // surfaced by guard(), so `records` is only ever a genuine result set.
@@ -1028,15 +1123,16 @@ export function registerTools(server: McpServer): void {
       }),
     },
     async (input) =>
-      guard(() =>
-        runSearch(
+      guard(() => {
+        const criteria = nycedcContractsCriteria(input);
+        return runSearch(
           "Contracts_OGE",
-          DEFAULT_COLUMNS["Contracts_OGE"],
-          nycedcContractsCriteria(input),
+          nycedcContractsColumns(criteria),
+          criteria,
           input.page,
           input.page_size
-        )
-      )
+        );
+      })
   );
 
   server.registerTool(
@@ -1047,7 +1143,9 @@ export function registerTools(server: McpServer): void {
         "These are separate from citywide contracts and are reported at release / line-item granularity " +
         "(purchase-order releases, funding source, program/project). Filter by fiscal year, vendor, " +
         "purchase-order type, responsibility center, contract type, industry, amount, and date ranges " +
-        "(including approved date).",
+        "(including approved date). Results carry a year field only when you filter by fiscal_year; " +
+        "without fiscal_year they carry no year or fiscal-year field. When the year matters, filter by " +
+        "fiscal_year (one call per year). start_date, end_date, and approved_date are per record.",
       inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
         vendor_name: z.string().optional().describe("Vendor name (contains match)"),
@@ -1083,14 +1181,15 @@ export function registerTools(server: McpServer): void {
       }),
     },
     async (input) =>
-      guard(() =>
-        runSearch(
+      guard(() => {
+        const criteria = nychaContractsCriteria(input);
+        return runSearch(
           "Contracts_NYCHA",
-          DEFAULT_COLUMNS["Contracts_NYCHA"],
-          nychaContractsCriteria(input),
+          nychaContractsColumns(criteria),
+          criteria,
           input.page,
           input.page_size
-        )
-      )
+        );
+      })
   );
 }

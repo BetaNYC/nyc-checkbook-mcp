@@ -79,7 +79,7 @@ export interface ApiSuccess {
  */
 export class CheckbookApiError extends Error {
   readonly status?: number;
-  readonly kind: "network" | "redirect" | "http" | "api";
+  readonly kind: "network" | "redirect" | "http" | "api" | "silent-empty";
   constructor(message: string, opts: { status?: number; kind: CheckbookApiError["kind"] }) {
     super(message);
     this.name = "CheckbookApiError";
@@ -386,6 +386,38 @@ export async function fetchWithRetry(
 }
 
 /**
+ * Silent-empty guard (issue #42). The API can report a success with
+ * record_count N > 0 and return no rows for a page that should have rows. Two
+ * causes seen live on 2026-10-16: an accepted response column (`contract_class`
+ * on registered revenue contracts) and an upstream defect independent of
+ * columns (registered revenue with fiscal_year). Passed through, that reads as "nothing on
+ * this page" while the count says thousands exist, and a caller would report the
+ * wrong answer. So it THROWS, by the same rule as #21: a reply that cannot be
+ * the true answer is an error, never a quiet empty result. A page past the end
+ * (records_from > N) and a true zero (N = 0) are normal empties and pass.
+ *
+ * The reply's message (code 1, "no results found") is NOT the signal: the API
+ * sends the same message when rows are returned.
+ */
+export function assertNotSilentEmpty(
+  req: Pick<ApiRequest, "type_of_data" | "records_from">,
+  totalRecords: number,
+  rowCount: number
+): void {
+  const from = req.records_from ?? 1;
+  if (rowCount === 0 && totalRecords > 0 && from <= totalRecords) {
+    throw new CheckbookApiError(
+      `Checkbook NYC matched ${totalRecords} ${req.type_of_data} record(s) but returned none ` +
+        `for records_from=${from}. This is not an empty result: the API counted matches and sent ` +
+        `no rows. Causes seen so far include a response column that suppresses rows and an ` +
+        `upstream defect (registered revenue contracts with fiscal_year), issue #42. ` +
+        `Do not conclude that no records exist.`,
+      { kind: "silent-empty" }
+    );
+  }
+}
+
+/**
  * Call the Checkbook XML API. Returns records on success; THROWS
  * {@link CheckbookApiError} on any failure (issue #21) — never a zero-count
  * "success". A genuinely empty-but-successful result still returns
@@ -427,6 +459,7 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiSuccess> {
   if (!parsed.success) {
     throw new CheckbookApiError(parsed.error ?? "Unknown Checkbook API error", { kind: "api" });
   }
+  assertNotSilentEmpty(req, parsed.total_records, parsed.records.length);
   return { total_records: parsed.total_records, records: parsed.records };
 }
 
@@ -574,15 +607,17 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     // All Years') rejects it — "Provided response column 'year' value is not
     // allowed ... Valid values are '...prime_contract_id,...prime_vendor,...'"
     // (observed 2026-07-16, issue #16). The domain's response vocabulary is the
-    // prime_contract_* / prime_vendor set. (OGE and NYCHA are distinct domains
-    // whose configs DO list a "year" rowElement — see Contracts_OGE /
-    // Contracts_NYCHA below — so this omission is citywide-Contracts-only.)
+    // prime_contract_* / prime_vendor set.
     // Added v1.2.0 — documented Contracts response columns confirmed against
     // https://www.checkbooknyc.com/contract-api (2026-07-09). WBE/EBE flags
     // (issue #9) and low-priority lineage/registration columns (issue #10).
     "prime_woman_owned_business",
     "prime_emerging_business",
     "mocs_registered",
+    // Kept here although it suppresses rows in the registered/revenue domain (see
+    // Contracts_revenue): search_contracts {category:"all", contract_id:
+    // "RCT186620208202671"} returned that revenue contract with this list (live,
+    // 2026-10-16), so it does not suppress revenue rows in the "all" domain.
     "contract_class",
     "parent_contract_id",
     "prime_contract_version",
@@ -602,10 +637,59 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "pin",
     "received_date",
   ],
+  // Registered REVENUE contracts (status=registered, category=revenue), issue
+  // #42. This domain does NOT use the prime_contract_* vocabulary of
+  // registered/expense: sending DEFAULT_COLUMNS.Contracts failed every revenue
+  // search live (2026-10-16, 1106 on 'prime_contract_id' for 'Registered
+  // Contracts(revenue) All Years'). Every name below is in BOTH live valid lists,
+  // 'Registered Contracts(revenue) All Years' (no fiscal_year) and 'Registered
+  // Contracts(revenue)' (with fiscal_year), probe 2026-10-16. "year" is listed
+  // only with fiscal_year, so it is left out. "contract_class" is left out because
+  // it silently suppresses every row (see below). The domain lists no sub_* columns
+  // and no spent_to_date. Selected by contractsColumns() in tools.ts. The other
+  // shapes need no list of their own: registered/all lists the same
+  // prime_contract_* names as registered/expense, and every pending shape
+  // (expense, revenue, all, with or without fiscal_year) lists the same names as
+  // pending/expense.
+  Contracts_revenue: [
+    "contract_id",
+    "prime_vendor",
+    "purpose",
+    "agency",
+    "current_amount",
+    "original_amount",
+    "start_date",
+    "end_date",
+    "award_method",
+    "contract_type",
+    "prime_mwbe_category",
+    "industry",
+    "pin",
+    "woman_owned_business",
+    "emerging_business",
+    // DO NOT re-add "contract_class". It IS in both live valid lists, but sending
+    // it makes the API return zero rows: without fiscal_year the reply is a
+    // success with record_count 12293 and no transactions (live, 2026-10-16;
+    // bisected over this list in 9 paced calls, contract_id+contract_class ->
+    // empty, every half without it -> rows). The fiscal_year case (record_count
+    // 399, no rows) is NOT this column: it is upstream and returns no rows for any
+    // column set, contract_id alone included, so search_contracts refuses that
+    // shape (#42). The column checker cannot see either: it only proves a name is
+    // accepted. The silent-empty guard in callCheckbookApi() turns both into errors.
+    "version",
+  ],
   // NYCEDC / Other Government Entities (OGE) contracts. Domain token
-  // "Contracts_OGE"; supports registered expense contracts only. Response
-  // column tokens transcribed verbatim from the CheckbookNYC API config
-  // (checkbook_api/src/config/contracts_oge.json, rowElements) — 2026-07-09.
+  // "Contracts_OGE"; supports registered expense contracts only. Derived from
+  // the CheckbookNYC API config (checkbook_api/src/config/contracts_oge.json,
+  // rowElements, 2026-07-09), then corrected against the live API (issue #40):
+  // the config lists "apt_pin". The live API rejected it on a fiscal_year search
+  // ('Registered Contracts_oge(expense)', 2026-10-15) and lists it as valid
+  // without fiscal_year ('... All Years', probe 2026-10-16). This base list is
+  // what every call shape sends; one rejected column fails the whole call, so do
+  // NOT add "apt_pin" here. It is appended only for calls without fiscal_year, by
+  // nycedcContractsColumns() / OGE_ALL_YEARS_COLUMNS in tools.ts. "year" is
+  // valid in both. Check changes with scripts/check-default-columns.mjs, not
+  // against the config.
   Contracts_OGE: [
     "other_government_entities",
     "prime_vendor",
@@ -617,7 +701,6 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "original_amount",
     "current_amount",
     "spent_to_date",
-    "apt_pin",
     "pin",
     "contract_type",
     "award_method",
@@ -631,11 +714,17 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "budget_name",
   ],
   // NYCHA (New York City Housing Authority) contracts. Domain token
-  // "Contracts_NYCHA"; release/line-item granularity. Response column tokens
-  // transcribed verbatim from the CheckbookNYC API config
-  // (checkbook_api/src/config/contracts_nycha.json, rowElements) — 2026-07-09.
+  // "Contracts_NYCHA"; release/line-item granularity. Derived from the
+  // CheckbookNYC API config (checkbook_api/src/config/contracts_nycha.json,
+  // rowElements, 2026-07-09), then corrected against the live API (issue #40):
+  // the config lists "year". The live API rejected it on a vendor_name-only
+  // search (2026-10-15) and lists it as valid with fiscal_year (probe
+  // 2026-10-16). This base list is what every call shape sends; one rejected
+  // column fails the whole call, so do NOT add "year" here. It is appended only
+  // for calls with fiscal_year, by nychaContractsColumns() /
+  // NYCHA_FISCAL_YEAR_COLUMNS in tools.ts, so results carry year only then.
+  // Check changes with scripts/check-default-columns.mjs, not against the config.
   Contracts_NYCHA: [
-    "year",
     "contract_id",
     "purchase_order_type",
     "record_type",

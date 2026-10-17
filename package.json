@@ -1,6 +1,6 @@
 {
   "name": "@betanyc/nyc-checkbook-mcp",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "MCP server for NYC Checkbook spending, contracts, budget, payroll, and revenue data",
   "keywords": [
     "mcp",
@@ -43,7 +43,8 @@
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "prepare": "npm run build",
-    "test": "npm run build && node --test test/*.test.mjs"
+    "test": "npm run build && node --test test/*.test.mjs",
+    "check:columns": "npm run build && node scripts/check-default-columns.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

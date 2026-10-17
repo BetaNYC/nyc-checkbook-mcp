@@ -93,11 +93,21 @@ Search registered or pending NYC contracts with structured filters.
 | `mwbe_category` | string | no | — | M/WBE category code |
 | `industry` | string | no | — | Industry code |
 | `contract_type` | string | no | — | Contract type code |
-| `include_sub_vendors` | boolean | no | `false` | Append sub-vendor / subcontractor detail columns (`sub_vendor`, `sub_vendor_mwbe_category`, `sub_contract_current_amount`, …) to the response. Registered contracts only. |
+| `include_sub_vendors` | boolean | no | `false` | Append sub-vendor / subcontractor detail columns (`sub_vendor`, `sub_vendor_mwbe_category`, `sub_contract_current_amount`, …) to the response. Registered `expense` or `all` only; ignored for `pending` and for `category="revenue"`, whose domains list no sub-vendor columns. |
 | `page` | number | no | `1` | Pagination |
 | `page_size` | number | no | `50` | Results per page (max 1000) |
 
-Registered-contract responses include documented WBE/EBE flags (`prime_woman_owned_business`, `prime_emerging_business`) and lineage/registration columns (`mocs_registered`, `contract_class`, `parent_contract_id`, `prime_contract_version`) in addition to the core fields.
+**Known API limitation:** registered `revenue` searches with `fiscal_year` return no rows. Checkbook NYC reports a match count but sends no records, whatever columns are requested (live, 2026-10-16). The tool refuses that combination with an error and guidance, without sending a request. Search without `fiscal_year` and narrow by date range instead.
+
+Registered `expense` and `all` responses include documented WBE/EBE flags (`prime_woman_owned_business`, `prime_emerging_business`) and lineage/registration columns (`mocs_registered`, `contract_class`, `parent_contract_id`, `prime_contract_version`) in addition to the core fields.
+
+**Record field names depend on `status` and `category`.** The API resolves a different domain for each, and records are returned with the API's own field names, not normalized:
+
+| Shape | Field names | Example fields |
+|---|---|---|
+| registered, `expense` or `all` | `prime_contract_*` | `prime_contract_id`, `prime_contract_purpose`, `prime_contracting_agency`, `prime_vendor_spent_to_date` |
+| registered, `revenue` | plain | `contract_id`, `purpose`, `agency`, `prime_mwbe_category`, `woman_owned_business`, `version` (no spent-to-date, no sub-vendors) |
+| `pending`, any category | plain | `contract_id`, `purpose`, `agency`, `received_date` |
 
 ```
 search_contracts(agency_code="858", fiscal_year="2024")
@@ -118,7 +128,7 @@ Look up a single contract by ID.
 |---|---|---|---|---|
 | `contract_id` | string | yes | — | e.g. `"CT185820201424467"` or `"DO185820252009241"` |
 | `status` | string | no | `registered` | `registered` or `pending` |
-| `category` | string | no | `expense` | `expense` or `revenue` |
+| `category` | string | no | `expense` | `expense` or `revenue`. Field names follow the same per-shape table as `search_contracts`. |
 
 ```
 get_contract("CT185820201424467")
@@ -236,6 +246,8 @@ get_agency_spending("040", "2025")   // NYPD
 
 Search NYCEDC / Other Government Entities (OGE) contracts (Checkbook domain `Contracts_OGE`), which are separate from citywide contracts. Registered expense contracts only.
 
+Results carry `apt_pin` only when you do **not** filter by `fiscal_year`. The API lists that response column as valid without `fiscal_year` and rejected it on a `fiscal_year` search (#40), so it is requested only then.
+
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `fiscal_year` | string | no | — | e.g. `"2024"` |
@@ -259,6 +271,8 @@ Search NYCEDC / Other Government Entities (OGE) contracts (Checkbook domain `Con
 ### `search_nycha_contracts`
 
 Search NYCHA (New York City Housing Authority) contracts (Checkbook domain `Contracts_NYCHA`), reported at release / line-item granularity (funding source, program/project, responsibility center).
+
+**Results carry a `year` field only when you filter by `fiscal_year`.** The API lists the `year` response column as valid with `fiscal_year` and rejected it on a search without (#40), so it is requested only then. Without `fiscal_year`, results carry no year or fiscal-year field. When the year matters, filter by `fiscal_year`, one call per year. Each record still has its own `start_date`, `end_date`, and `approved_date`.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -435,16 +449,18 @@ npm run build
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run dev` | Compile in watch mode |
 | `npm test` | Build, then run the test suite |
+| `npm run check:columns` | Build, then check every default response-column list, per call shape, against `probe-results.txt` (no network; see [scripts/README.md](scripts/README.md)) |
 | `npm start` | Run the built server |
 
 ### Testing
 
 Tests use the Node built-in test runner and live in `test/`. They run against recorded fixtures in `test/fixtures/` rather than the live API, so the suite needs no network access and cannot trip the rate limit.
 
-Two areas carry tests worth knowing about before you change them:
+Three areas carry tests worth knowing about before you change them:
 
 - **`test/pace.test.mjs`** guards the rate limiter, including the case where several callers are in flight at once. If you change how requests are dispatched, these are the tests that catch a regression into bursting.
 - **`test/strict-schema.test.mjs`** asserts that unknown tool parameters are rejected rather than silently dropped.
+- **`test/check-default-columns.test.mjs`** tests the default-column checker against a recorded probe snapshot. It proves the checker works, not that the columns are valid today. Only a fresh probe run can show that (see Releases).
 
 ### Source layout
 
@@ -494,6 +510,17 @@ This server pairs directly with:
 ---
 
 ## Releases
+
+**Before tagging, check the default response columns against the live API.** A single rejected response column fails the whole request, so it can disable a tool outright, and default columns have been wrong four times (#16, v1.6.1, #40, #42). With no MCP client running:
+
+```bash
+bash scripts/probe-api-spec.sh   # 43 paced requests, ~65s; run it once, alone
+npm run check:columns            # must exit 0
+```
+
+**Then make one paced live call per contract shape and confirm each returns at least one row**: `search_contracts` for registered expense, registered revenue (without `fiscal_year`; with it, the API is known to return no rows, see below), registered `all`, and pending; `get_contract` for one revenue contract; plus `search_nycha_contracts` and `search_nycedc_contracts` with and without `fiscal_year`. Space the calls out, and run them alone. The checker cannot catch this: a column the API *accepts* can still make it return no rows (`contract_class` on revenue contracts, #42). The server now reports that case as an error ("matched N records but returned none"), not as an empty page, so an `isError` here is the signal to bisect the column list. If even `contract_id` alone returns no rows, the defect is upstream, not in a column: registered revenue with `fiscal_year` is one such case (live, 2026-10-16; 399 matched, no rows for any column set).
+
+If the probe aborts with a 403, that is a rate-limit block: stop, and do not re-run it to check. If the checker reports `UNVERIFIED`, follow [scripts/README.md](scripts/README.md#checking-the-default-response-columns-pre-release). `probe-results.txt` is git-ignored.
 
 Publishing is automated. Pushing a tag of the form `v<version>` (matching `package.json`) runs `.github/workflows/release.yml`, which tests, publishes to npm with provenance, and creates a GitHub Release with generated notes. Requires the `NPM_TOKEN` repository secret. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
