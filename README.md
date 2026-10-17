@@ -97,7 +97,7 @@ Search registered or pending NYC contracts with structured filters.
 | `page` | number | no | `1` | Pagination |
 | `page_size` | number | no | `50` | Results per page (max 1000) |
 
-**Known API limitation:** registered `revenue` searches with `fiscal_year` return no rows. Checkbook NYC reports a match count but sends no records, whatever columns are requested (live, 2026-10-16). The tool returns an error rather than an empty page. Search without `fiscal_year` and narrow by date range instead.
+**Known API limitation:** registered `revenue` searches with `fiscal_year` return no rows. Checkbook NYC reports a match count but sends no records, whatever columns are requested (live, 2026-10-16). The tool refuses that combination with an error and guidance, without sending a request. Search without `fiscal_year` and narrow by date range instead.
 
 Registered `expense` and `all` responses include documented WBE/EBE flags (`prime_woman_owned_business`, `prime_emerging_business`) and lineage/registration columns (`mocs_registered`, `contract_class`, `parent_contract_id`, `prime_contract_version`) in addition to the core fields.
 
@@ -456,7 +456,7 @@ npm run build
 
 Tests use the Node built-in test runner and live in `test/`. They run against recorded fixtures in `test/fixtures/` rather than the live API, so the suite needs no network access and cannot trip the rate limit.
 
-Two areas carry tests worth knowing about before you change them:
+Three areas carry tests worth knowing about before you change them:
 
 - **`test/pace.test.mjs`** guards the rate limiter, including the case where several callers are in flight at once. If you change how requests are dispatched, these are the tests that catch a regression into bursting.
 - **`test/strict-schema.test.mjs`** asserts that unknown tool parameters are rejected rather than silently dropped.

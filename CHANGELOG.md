@@ -76,7 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reports `record_count` N > 0, the requested `records_from` is at most N, and
   no rows come back, `callCheckbookApi()` throws a `CheckbookApiError` of kind
   `silent-empty`. The tool result is `isError` and says that the API matched N
-  records but returned none, and that this does not mean no records exist. It
+  records but returned none, names the causes seen so far (a row-suppressing
+  response column, and the upstream revenue + `fiscal_year` defect) without
+  asserting either, and says this does not mean no records exist. It
   is an error rather than a warning field for the same reason as #21: a result
   that cannot be the true answer must not be readable as one, and a caller
   given `records: []` will report "none". A page past the end and a true zero
@@ -100,9 +102,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no rows.** The Checkbook API reports a match count (399 for FY2025) but sends
   no rows, whatever response columns are requested, including `contract_id`
   alone (live, 2026-10-16, bisected over every column). It is a server-side
-  defect this release cannot fix. The silent-empty guard reports it as an error
-  rather than as "no records". Search registered revenue without `fiscal_year`
-  and filter by dates instead.
+  defect this release cannot fix. `search_contracts` **fails fast** on that
+  shape: when status is `registered` (the default), category is `revenue`, and
+  `fiscal_year` is sent, it returns `isError` with guidance (a known upstream
+  limitation; omit `fiscal_year` and filter by date range) and sends no
+  request, so no call is spent from the 1 req/sec budget on a reply that cannot
+  return rows. Any other path to that reply still hits the silent-empty guard.
+  Search registered revenue without `fiscal_year` and filter by dates instead.
 - **`scripts/probe-api-spec.sh` no longer dies silently on a transport
   failure.** A curl failure (exit 92, an HTTP/2 stream error, seen on probe 36
   on 2026-10-16) killed the script under `set -e`, leaving an empty section and
@@ -190,15 +196,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   end-to-end test (stubbed `fetch`) that checks which columns each tool puts on
   the wire with and without `fiscal_year`. The tests that treated the published
   config as the authority for NYCHA and OGE response columns are removed.
-  `test/silent-empty.test.mjs` (6 tests, offline) uses two real 2026-10-16
+  `test/silent-empty.test.mjs` (8 tests, offline) uses two real 2026-10-16
   replies as fixtures, `contracts-revenue-silent-empty.xml` (12293 matched, no
   rows) and `contracts-revenue-contract-id-only.xml` (rows, same message). It
   covers: the guard's boundaries (true zero, a page past the end, rows
   returned); `callCheckbookApi` rejecting the real reply; `search_contracts` and
   `get_contract` returning `isError` with the count; `contract_class` absent
   from every revenue shape; and the probe script's transport abort, run with a
-  fake `curl` that exits 92. Mutation-checked: re-adding `contract_class` fails
-  1 test, disabling the guard fails 2, and reverting the probe fix fails 1.
+  fake `curl` that exits 92. Two more cover the revenue + `fiscal_year`
+  fail-fast: the shape predicate, and the tool refusing with guidance while the
+  stubbed `fetch` is never called. Mutation-checked: re-adding `contract_class`
+  fails 1 test, disabling the guard fails 2, reverting the probe fix fails 1,
+  disabling the fail-fast fails 1, and restoring the old error text fails 1.
   For #42: `contractsColumns()` is tested for all 24
   `(status, category, fiscal_year, include_sub_vendors)` combinations, plus a
   guard that registered revenue never sends a `prime_contract_*`, `sub_*` or

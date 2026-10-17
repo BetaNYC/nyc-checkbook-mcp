@@ -387,9 +387,10 @@ export async function fetchWithRetry(
 
 /**
  * Silent-empty guard (issue #42). The API can report a success with
- * record_count N > 0 and return no rows for a page that should have rows (one
- * accepted response column, `contract_class` on registered revenue contracts,
- * did exactly that, live 2026-10-16). Passed through, that reads as "nothing on
+ * record_count N > 0 and return no rows for a page that should have rows. Two
+ * causes seen live on 2026-10-16: an accepted response column (`contract_class`
+ * on registered revenue contracts) and an upstream defect independent of
+ * columns (registered revenue with fiscal_year). Passed through, that reads as "nothing on
  * this page" while the count says thousands exist, and a caller would report the
  * wrong answer. So it THROWS, by the same rule as #21: a reply that cannot be
  * the true answer is an error, never a quiet empty result. A page past the end
@@ -408,8 +409,9 @@ export function assertNotSilentEmpty(
     throw new CheckbookApiError(
       `Checkbook NYC matched ${totalRecords} ${req.type_of_data} record(s) but returned none ` +
         `for records_from=${from}. This is not an empty result: the API counted matches and sent ` +
-        `no rows, which has been caused by a response column that suppresses rows ` +
-        `(issue #42). Report it as a server defect; do not conclude that no records exist.`,
+        `no rows. Causes seen so far include a response column that suppresses rows and an ` +
+        `upstream defect (registered revenue contracts with fiscal_year), issue #42. ` +
+        `Do not conclude that no records exist.`,
       { kind: "silent-empty" }
     );
   }
@@ -612,6 +614,10 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "prime_woman_owned_business",
     "prime_emerging_business",
     "mocs_registered",
+    // Kept here although it suppresses rows in the registered/revenue domain (see
+    // Contracts_revenue): search_contracts {category:"all", contract_id:
+    // "RCT186620208202671"} returned that revenue contract with this list (live,
+    // 2026-10-16), so it does not suppress revenue rows in the "all" domain.
     "contract_class",
     "parent_contract_id",
     "prime_contract_version",
@@ -639,7 +645,7 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
   // 'Registered Contracts(revenue) All Years' (no fiscal_year) and 'Registered
   // Contracts(revenue)' (with fiscal_year), probe 2026-10-16. "year" is listed
   // only with fiscal_year, so it is left out. "contract_class" is left out because
-// it silently suppresses every row (see below). The domain lists no sub_* columns
+  // it silently suppresses every row (see below). The domain lists no sub_* columns
   // and no spent_to_date. Selected by contractsColumns() in tools.ts. The other
   // shapes need no list of their own: registered/all lists the same
   // prime_contract_* names as registered/expense, and every pending shape
@@ -662,12 +668,14 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "woman_owned_business",
     "emerging_business",
     // DO NOT re-add "contract_class". It IS in both live valid lists, but sending
-    // it makes the API return zero rows: the reply is a success with
-    // record_count 12293 (no fiscal_year) / 399 (fiscal_year 2025) and no
-    // transactions (live, 2026-10-16; bisected over this list in 9 paced calls,
-    // contract_id+contract_class -> empty, every half without it -> rows). The
-    // column checker cannot see this: it only proves a name is accepted. The
-    // silent-empty guard in callCheckbookApi() now turns that reply into an error.
+    // it makes the API return zero rows: without fiscal_year the reply is a
+    // success with record_count 12293 and no transactions (live, 2026-10-16;
+    // bisected over this list in 9 paced calls, contract_id+contract_class ->
+    // empty, every half without it -> rows). The fiscal_year case (record_count
+    // 399, no rows) is NOT this column: it is upstream and returns no rows for any
+    // column set, contract_id alone included, so search_contracts refuses that
+    // shape (#42). The column checker cannot see either: it only proves a name is
+    // accepted. The silent-empty guard in callCheckbookApi() turns both into errors.
     "version",
   ],
   // NYCEDC / Other Government Entities (OGE) contracts. Domain token

@@ -193,6 +193,29 @@ const CONTRACT_VALUE_FIELDS: Record<string, string> = {
  * contracts) or send an invalid param (which yields an opaque 1101 error), the
  * handler stops and explains the supported paths.
  */
+/**
+ * Registered revenue + fiscal_year is a known upstream defect (#42): the API
+ * reports a match count (399 for FY2025) and returns no rows for ANY response
+ * column set, contract_id alone included (live, 2026-10-16). search_contracts
+ * refuses that shape before sending a request, rather than spending one from
+ * the 1 req/sec budget on a reply that can only be the silent-empty error.
+ */
+export const REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE =
+  "search_contracts cannot search registered revenue contracts by fiscal_year: " +
+  "this is a known Checkbook NYC API limitation (#42). The API reports a match " +
+  "count for that shape but returns no records, whatever columns are requested. " +
+  "Omit fiscal_year and filter by date range instead (start_date_from/_to, " +
+  "end_date_from/_to, or registration_date_from/_to). No request was sent.";
+
+/** True for the shape REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE refuses, judged from the criteria to be sent. */
+export function isRegisteredRevenueFiscalYear(criteria: Criteria[]): boolean {
+  return (
+    (criterionValue(criteria, "status") ?? "registered") === "registered" &&
+    criterionValue(criteria, "category") === "revenue" &&
+    sendsFiscalYear(criteria)
+  );
+}
+
 export const VENDOR_NAME_UNSUPPORTED_MESSAGE =
   "search_contracts cannot filter by vendor name: the Checkbook NYC contracts " +
   "API filters vendors only by 'vendor_code', and offers no name→code lookup. " +
@@ -653,7 +676,7 @@ export function registerTools(server: McpServer): void {
         "To find contracts by vendor NAME, use search_spending (payee_name) for checks paid to a named vendor. " +
         "Many contracts are held by resellers, so a product/software name may not match the contract's own vendor. " +
         "KNOWN API LIMITATION: registered revenue contracts (category 'revenue') with fiscal_year return no rows " +
-        "from Checkbook NYC (a match count, no records), so the tool returns an error; omit fiscal_year and filter by dates instead.",
+        "from Checkbook NYC (a match count, no records), so the tool refuses that combination without sending a request; omit fiscal_year and filter by dates instead.",
       inputSchema: strictSchema({
         status: z
           .enum(["registered", "pending"])
@@ -787,6 +810,10 @@ export function registerTools(server: McpServer): void {
           throw new Error(VENDOR_NAME_UNSUPPORTED_MESSAGE);
         }
         const criteria = contractsCriteria(input);
+        if (isRegisteredRevenueFiscalYear(criteria)) {
+          // Fail fast, no network call (#42 upstream limitation).
+          throw new Error(REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE);
+        }
         return runSearch(
           "Contracts",
           contractsColumns(criteria, input.include_sub_vendors),

@@ -22,7 +22,13 @@ import {
   CheckbookApiError,
   DEFAULT_COLUMNS,
 } from "../dist/checkbook.js";
-import { registerTools, contractsColumns, contractsCriteria } from "../dist/tools.js";
+import {
+  registerTools,
+  contractsColumns,
+  contractsCriteria,
+  isRegisteredRevenueFiscalYear,
+  REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE,
+} from "../dist/tools.js";
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 const SILENT = fixture("contracts-revenue-silent-empty.xml");
@@ -102,7 +108,10 @@ test("search_contracts and get_contract surface a silent empty as isError, namin
         const res = await client.callTool({ name, arguments: args });
         assert.equal(res.isError, true, name);
         assert.match(res.content[0].text, /matched 12293 Contracts record\(s\) but returned none/, name);
-        assert.match(res.content[0].text, /do not conclude that no records exist/, name);
+        assert.match(res.content[0].text, /Do not conclude that no records exist/, name);
+        // It names the causes seen, without asserting that a column is the cause.
+        assert.match(res.content[0].text, /Causes seen so far include a response column .* and an upstream defect/, name);
+        assert.doesNotMatch(res.content[0].text, /which has been caused by a response column/, name);
       }
     });
     // A page past the end is still a normal empty page.
@@ -135,4 +144,53 @@ test("probe-api-spec.sh records a curl transport failure as ABORTED and exits 1 
   const text = readFileSync(out, "utf8");
   assert.match(text, /ABORTED: curl exit 92 after 0 successful probe\(s\)\./);
   assert.match(r.stderr, /curl exit 92/);
+});
+
+test("#42 isRegisteredRevenueFiscalYear matches only registered + revenue + a sent fiscal_year", () => {
+  const yes = (input) => isRegisteredRevenueFiscalYear(contractsCriteria(input));
+  assert.equal(yes({ status: "registered", category: "revenue", fiscal_year: "2025" }), true);
+  assert.equal(yes({ category: "revenue", fiscal_year: "2025" }), true); // status defaults to registered
+  assert.equal(yes({ status: "registered", category: "revenue" }), false);
+  assert.equal(yes({ status: "registered", category: "revenue", fiscal_year: "" }), false); // not sent
+  assert.equal(yes({ status: "pending", category: "revenue", fiscal_year: "2025" }), false);
+  assert.equal(yes({ status: "registered", category: "all", fiscal_year: "2025" }), false);
+  assert.equal(yes({ status: "registered", category: "expense", fiscal_year: "2025" }), false);
+});
+
+test("#42 search_contracts refuses registered revenue + fiscal_year with guidance and sends NO request", async () => {
+  const server = new McpServer({ name: "nyc-checkbook-mcp", version: "1.0.0" });
+  registerTools(server);
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(SILENT, { status: 200 });
+  };
+  try {
+    for (const args of [
+      { category: "revenue", fiscal_year: "2025" },
+      { status: "registered", category: "revenue", fiscal_year: "2024", agency_code: "002" },
+    ]) {
+      const res = await client.callTool({ name: "search_contracts", arguments: args });
+      assert.equal(res.isError, true, JSON.stringify(args));
+      assert.ok(res.content[0].text.includes(REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE));
+      assert.match(res.content[0].text, /known Checkbook NYC API limitation/);
+      assert.match(res.content[0].text, /Omit fiscal_year and filter by date range/);
+    }
+    assert.equal(calls, 0, "fetch must not be called");
+    // Neighbouring shapes still send a request.
+    const res = await client.callTool({
+      name: "search_contracts",
+      arguments: { status: "pending", category: "revenue", fiscal_year: "2025", page_size: 1 },
+    });
+    assert.equal(calls, 1);
+    assert.doesNotMatch(res.content[0].text, /known Checkbook NYC API limitation/);
+  } finally {
+    globalThis.fetch = original;
+    await client.close();
+    await server.close();
+  }
 });
