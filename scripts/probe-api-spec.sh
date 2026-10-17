@@ -6,7 +6,7 @@
 # COMPLIANCE with the limits the Comptroller's office gave us (2026-07-28):
 #
 #   * 1 request per second      -> PACE below, default 1.5s, applied after every
-#                                  call. 35 probes ~= 55s total.
+#                                  call. 43 probes ~= 65s total.
 #   * 20,000 records per call   -> every probe asks for max_records=1. These are
 #                                  error-path probes; no result set is wanted.
 #   * no redirect following     -> curl does not follow redirects without -L.
@@ -88,6 +88,9 @@ cols () { # $1=label $2=type_of_data $3=extra criteria xml (may be empty)
 C_REG_EXP='<criteria><name>status</name><type>value</type><value>registered</value></criteria><criteria><name>category</name><type>value</type><value>expense</value></criteria>'
 C_REG_REV='<criteria><name>status</name><type>value</type><value>registered</value></criteria><criteria><name>category</name><type>value</type><value>revenue</value></criteria>'
 C_PEND='<criteria><name>status</name><type>value</type><value>pending</value></criteria><criteria><name>category</name><type>value</type><value>expense</value></criteria>'
+C_REG_ALL='<criteria><name>status</name><type>value</type><value>registered</value></criteria><criteria><name>category</name><type>value</type><value>all</value></criteria>'
+C_PEND_REV='<criteria><name>status</name><type>value</type><value>pending</value></criteria><criteria><name>category</name><type>value</type><value>revenue</value></criteria>'
+C_PEND_ALL='<criteria><name>status</name><type>value</type><value>pending</value></criteria><criteria><name>category</name><type>value</type><value>all</value></criteria>'
 FY='<criteria><name>fiscal_year</name><type>value</type><value>2025</value></criteria>'
 BUDGET_Y='<criteria><name>year</name><type>value</type><value>2025</value></criteria>'
 CAL_Y='<criteria><name>calendar_year</name><type>value</type><value>2025</value></criteria>'
@@ -138,5 +141,16 @@ cols "Spending issue_date"             Spending        "$ISSUE_D"
 cols "Budget year"                     Budget          "$BUDGET_Y"
 cols "Budget no year"                  Budget          ""
 cols "Payroll calendar_year"           Payroll         "$CAL_Y"
+# Contracts category variants (issue #42): search_contracts sends status and
+# category on every call, and get_contract sends status + category + contract_id
+# with no fiscal_year. Each (status, category) resolves its own domain.
+cols "Contracts registered/revenue FY"          Contracts "$C_REG_REV$FY"
+cols "Contracts registered/revenue contract_id" Contracts "$C_REG_REV$CID"
+cols "Contracts registered/all"                 Contracts "$C_REG_ALL"
+cols "Contracts registered/all FY"              Contracts "$C_REG_ALL$FY"
+cols "Contracts pending/revenue"                Contracts "$C_PEND_REV"
+cols "Contracts pending/revenue FY"             Contracts "$C_PEND_REV$FY"
+cols "Contracts pending/all"                    Contracts "$C_PEND_ALL"
+cols "Contracts pending/all FY"                 Contracts "$C_PEND_ALL$FY"
 
 printf 'DONE (%d probes)\n' "$probe_count" >> "$OUT"

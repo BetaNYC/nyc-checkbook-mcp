@@ -18,6 +18,8 @@ import {
   SUB_VENDOR_COLUMNS,
   NYCHA_FISCAL_YEAR_COLUMNS,
   OGE_ALL_YEARS_COLUMNS,
+  contractsColumns,
+  contractsCriteria,
 } from "../dist/tools.js";
 
 const sections = parseProbeResults(
@@ -186,6 +188,96 @@ test("a probe variant missing from the output fails the check instead of passing
   const missing = findingsFor(result, "Contracts").filter((f) => f.type === "missing-probe");
   assert.deepEqual(missing.map((f) => f.probe), ["Contracts registered/expense FY"]);
   assert.ok(!result.passed.some((c) => c.name === "Contracts"));
+});
+
+// ─── Contracts per (status, category, fiscal_year) — issue #42 ──────────────
+// The fixture carries real 2026-10-16 output for every contracts shape except
+// registered/expense FY, pending/expense FY and registered/revenue contract_id.
+const CONTRACT_PROBE_SHAPES = [
+  ["Contracts registered/expense", { status: "registered", category: "expense" }],
+  ["Contracts registered/revenue", { status: "registered", category: "revenue" }],
+  ["Contracts registered/revenue FY", { status: "registered", category: "revenue", fiscal_year: "2025" }],
+  ["Contracts registered/all", { status: "registered", category: "all" }],
+  ["Contracts registered/all FY", { status: "registered", category: "all", fiscal_year: "2025" }],
+  ["Contracts pending/expense", { status: "pending", category: "expense" }],
+  ["Contracts pending/revenue", { status: "pending", category: "revenue" }],
+  ["Contracts pending/revenue FY", { status: "pending", category: "revenue", fiscal_year: "2025" }],
+  ["Contracts pending/all", { status: "pending", category: "all" }],
+  ["Contracts pending/all FY", { status: "pending", category: "all", fiscal_year: "2025" }],
+];
+
+test("every column contractsColumns sends for a shape is in that shape's real live list (#42)", () => {
+  for (const [probe, input] of CONTRACT_PROBE_SHAPES) {
+    const section = sections.get(`${probe} :: COLUMNS`);
+    assert.ok(section?.valid, `fixture lacks ${probe}`);
+    for (const sub of [false, true]) {
+      const cols = contractsColumns(contractsCriteria(input), sub);
+      const absent = cols.filter((c) => !section.valid.has(c));
+      assert.deepEqual(absent, [], `${probe} sub=${sub} (${section.domain})`);
+    }
+  }
+});
+
+test("COLUMN_CHECKS maps each contracts list to exactly its shapes' probes (#42)", () => {
+  const byName = new Map(COLUMN_CHECKS.map((c) => [c.name, c]));
+  assert.deepEqual(byName.get("Contracts_revenue").probes, [
+    "Contracts registered/revenue",
+    "Contracts registered/revenue FY",
+    "Contracts registered/revenue contract_id",
+  ]);
+  for (const name of ["Contracts", "Contracts + SUB_VENDOR_COLUMNS"]) {
+    assert.deepEqual(byName.get(name).probes, [
+      "Contracts registered/expense",
+      "Contracts registered/expense FY",
+      "Contracts registered/all",
+      "Contracts registered/all FY",
+    ]);
+  }
+  assert.deepEqual(byName.get("Contracts_pending").probes, [
+    "Contracts pending/expense",
+    "Contracts pending/expense FY",
+    "Contracts pending/revenue",
+    "Contracts pending/revenue FY",
+    "Contracts pending/all",
+    "Contracts pending/all FY",
+  ]);
+  // Each entry builds the list the tool sends for that shape.
+  const reg = (category) => contractsCriteria({ status: "registered", category });
+  const args = { defaultColumns: DEFAULT_COLUMNS, subVendorColumns: SUB_VENDOR_COLUMNS };
+  assert.deepEqual(byName.get("Contracts_revenue").columns(args), contractsColumns(reg("revenue"), true));
+  assert.deepEqual(byName.get("Contracts").columns(args), contractsColumns(reg("all"), false));
+  assert.deepEqual(byName.get("Contracts + SUB_VENDOR_COLUMNS").columns(args), contractsColumns(reg("all"), true));
+  assert.deepEqual(
+    byName.get("Contracts_pending").columns(args),
+    contractsColumns(contractsCriteria({ status: "pending", category: "all" }), false)
+  );
+});
+
+test("current Contracts_revenue and Contracts_pending lists have no unverified column in the snapshot (#42)", () => {
+  const result = run(DEFAULT_COLUMNS);
+  assert.deepEqual(unverified(result, "Contracts_revenue"), []);
+  assert.deepEqual(
+    findingsFor(result, "Contracts_revenue").map((f) => [f.type, f.probe]),
+    [["missing-probe", "Contracts registered/revenue contract_id"]]
+  );
+  assert.deepEqual(unverified(result, "Contracts_pending"), []);
+  assert.deepEqual(
+    findingsFor(result, "Contracts_pending").map((f) => [f.type, f.probe]),
+    [["missing-probe", "Contracts pending/expense FY"]]
+  );
+  assert.deepEqual(unverified(result, "Contracts"), []);
+  assert.deepEqual(unverified(result, "Contracts + SUB_VENDOR_COLUMNS"), []);
+});
+
+test("regression #42: sending the expense list for registered/revenue is flagged, 18 columns, prime_contract_id first", () => {
+  const result = run({ ...DEFAULT_COLUMNS, Contracts_revenue: DEFAULT_COLUMNS.Contracts });
+  const flagged = findingsFor(result, "Contracts_revenue")
+    .filter((f) => f.type === "unverified" && f.probe === "Contracts registered/revenue")
+    .map((f) => f.column);
+  assert.equal(flagged.length, 18); // matches issue #42: only prime_vendor and contract_class survive
+  assert.equal(flagged[0], "prime_contract_id");
+  assert.ok(!flagged.includes("prime_vendor"));
+  assert.ok(!flagged.includes("contract_class"));
 });
 
 test("Budget is checked with and without its year criterion; the snapshot has neither variant", () => {

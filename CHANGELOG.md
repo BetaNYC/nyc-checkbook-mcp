@@ -39,7 +39,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `search_nycedc_contracts` with `fiscal_year` (the shape #40 broke) returned
   records; with `vendor_name` only (sending `apt_pin`) it was accepted and
   matched 0 records. An earlier check on 2026-10-15 sent `fiscal_year` for both
-  tools, so it proved the OGE fix only.
+  tools, so it proved the OGE fix only. That verification predates the #42 fix
+  below and does not cover it.
+- **`search_contracts` and `get_contract` failed for every registered revenue
+  contract (#42).** Both sent the registered/expense column list
+  (`prime_contract_*`) for every `category`. `status=registered, category=revenue`
+  resolves a different domain, `Registered Contracts(revenue)`, whose vocabulary
+  uses plain names, and the live API rejected the first column:
+  `search_contracts({category:"revenue"})` returned "Provided response column
+  'prime_contract_id' value is not allowed for 'Registered Contracts(revenue) All
+  Years' domain" (2026-10-16). 18 of the 20 expense columns are absent from that
+  domain's list. `contractsColumns()` now takes the criteria a call sends and
+  picks the list per `(status, category)`: registered `expense`/`all` keep
+  `DEFAULT_COLUMNS.Contracts` (the registered/all domain lists the same names,
+  `sub_*` included); registered `revenue` uses the new
+  `DEFAULT_COLUMNS.Contracts_revenue`; every `pending` category keeps
+  `Contracts_pending` (all pending domains list the same names). `fiscal_year`
+  changes nothing: each chosen column is listed both with and without it. The
+  revenue list carries the equivalent fields (id, vendor, purpose, agency,
+  amounts, dates, award method, type, M/WBE, industry, PIN, WBE/EBE flags, class,
+  version) under that domain's own names. It has no spent-to-date or sub-vendor
+  fields, because the domain lists none, so `include_sub_vendors` is ignored
+  for revenue, as it already was for pending. `get_contract` uses the same
+  selection.
+  - **Verified so far: probe lists only.** Every column sent for every
+    `(status, category)` shape, with and without `fiscal_year`, is in that shape's
+    live valid list (seven paced `cols` probes, 2026-10-16, plus the
+    registered/revenue and expense/pending variants of the 35-probe run).
+    `get_contract`'s own shape (`contract_id`, no `fiscal_year`) has a probe
+    variant that has not been sent yet. **No live tool call has been made against
+    the fixed code**: one paced `search_contracts` call for registered revenue and
+    one `get_contract` for a revenue contract are still owed before tagging.
+- **Record field names now differ by shape**, because records are returned as
+  the API sends them, without normalization: registered expense/all use
+  `prime_contract_*` names, while registered revenue and pending use plain names
+  (`contract_id`, `purpose`, `agency`, ...). This was already true for pending;
+  it is now true for revenue, which returned no records at all before.
 
 ### Added
 
@@ -57,9 +92,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   columns); and on a `DEFAULT_COLUMNS` key with no mapping. Every run prints the
   call shapes no probe covers. It replaces patching this defect class by hand
   (#16, v1.6.1, #40).
-- **`scripts/probe-api-spec.sh` sends eleven call-shape variants** (24 to 35
-  requests, still paced at 1.5 s, ~55 s), because the column vocabulary depends
-  on the criteria sent: citywide and pending contracts with `fiscal_year`; OGE
+- **`scripts/probe-api-spec.sh` sends nineteen call-shape variants** (24 to 43
+  requests, still paced at 1.5 s, ~65 s), because the column vocabulary depends
+  on the criteria sent: citywide and pending contracts with `fiscal_year`;
+  registered revenue with `fiscal_year` and with `contract_id` (the
+  `get_contract` shape); registered and pending `all`, and pending `revenue`,
+  each with and without `fiscal_year` (#42); OGE
   with `fiscal_year` and with `contract_id`; NYCHA by `vendor_name` without
   `fiscal_year`, by `contract_id`, and with no criteria; Spending by
   `issue_date`; Budget with its `year` criterion and with no criteria; and
@@ -70,11 +108,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `search_nycha_contracts` description and README say that results carry a
   year field only when filtering by `fiscal_year`, and none otherwise.
+- The `search_contracts` `category` and `include_sub_vendors` descriptions, the
+  `get_contract` description, and the README say which field names each
+  `(status, category)` returns and that `include_sub_vendors` is ignored for
+  revenue (#42). `scripts/README.md` adds the revenue vocabulary as item 7 of the
+  defects list, with a note that whether the published docs describe it was not
+  checked, and drops it from "What a pass does not cover".
 - README Releases has a pre-release step: run the probe once, then
   `npm run check:columns`, before tagging. `npm run check:columns` is added to the
   Development table, and CONTRIBUTING covers column and call-shape changes.
 - `scripts/README.md`: NYCHA `year` and OGE `apt_pin` are added to the
-  documentation-defects list (six entries now, covering docs and config), each
+  documentation-defects list (seven entries now, with #42 below; covering docs and config), each
   naming the call shape that failed. New sections cover the checker and how
   domain resolution depends on criteria.
 - `src/checkbook.ts`: the OGE and NYCHA comments say the base lists are derived
@@ -84,7 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
-- `test/check-default-columns.test.mjs` (19 tests, offline) runs against
+- `test/check-default-columns.test.mjs` (23 tests, offline) runs against
   `test/fixtures/probe-results-sample.txt`, which is real API output with its
   provenance in its header. Covered: the parser (including an aborted section, and
   a `COLUMNS` section holding a 1101 error, which must be `UNPARSED-PROBE`);
@@ -94,13 +138,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failures; Budget mapped with and without `year`; each mapped variant must be
   one the probe script sends; the CLI's exit codes and untruncated piped output;
   and regressions for #16, v1.6.1 and #40, each flagged in the variant that omits
-  the column.
+  the column. For #42: every column `contractsColumns()` sends for ten
+  `(status, category, fiscal_year)` shapes is checked against that shape's real
+  list in the fixture; `COLUMN_CHECKS` is pinned to the lists the tool sends; and
+  sending the expense list for revenue is flagged as 18 unverified columns. The
+  fixture gains the seven real sections from the 2026-10-16 #42 probes.
 - `test/tools.test.mjs`: one base-list guard per domain (`!includes("year")` for
   NYCHA, `!includes("apt_pin")` for OGE), unit tests for both call shapes of
   `nychaContractsColumns()` and `nycedcContractsColumns()`, and an offline
   end-to-end test (stubbed `fetch`) that checks which columns each tool puts on
   the wire with and without `fiscal_year`. The tests that treated the published
   config as the authority for NYCHA and OGE response columns are removed.
+  For #42: `contractsColumns()` is tested for all 24
+  `(status, category, fiscal_year, include_sub_vendors)` combinations, plus a
+  guard that registered revenue never sends a `prime_contract_*`, `sub_*` or
+  `year` column, and an offline end-to-end test that checks the columns
+  `search_contracts` and `get_contract` put on the wire for revenue, all and
+  pending. Mutation-checked: making the selection ignore `category` fails 6
+  tests; restoring the hardcoded expense list in `get_contract` fails 1.
 
 ## [1.6.2] - 2026-10-11
 

@@ -93,11 +93,19 @@ Search registered or pending NYC contracts with structured filters.
 | `mwbe_category` | string | no | — | M/WBE category code |
 | `industry` | string | no | — | Industry code |
 | `contract_type` | string | no | — | Contract type code |
-| `include_sub_vendors` | boolean | no | `false` | Append sub-vendor / subcontractor detail columns (`sub_vendor`, `sub_vendor_mwbe_category`, `sub_contract_current_amount`, …) to the response. Registered contracts only. |
+| `include_sub_vendors` | boolean | no | `false` | Append sub-vendor / subcontractor detail columns (`sub_vendor`, `sub_vendor_mwbe_category`, `sub_contract_current_amount`, …) to the response. Registered `expense` or `all` only; ignored for `pending` and for `category="revenue"`, whose domains list no sub-vendor columns. |
 | `page` | number | no | `1` | Pagination |
 | `page_size` | number | no | `50` | Results per page (max 1000) |
 
-Registered-contract responses include documented WBE/EBE flags (`prime_woman_owned_business`, `prime_emerging_business`) and lineage/registration columns (`mocs_registered`, `contract_class`, `parent_contract_id`, `prime_contract_version`) in addition to the core fields.
+Registered `expense` and `all` responses include documented WBE/EBE flags (`prime_woman_owned_business`, `prime_emerging_business`) and lineage/registration columns (`mocs_registered`, `contract_class`, `parent_contract_id`, `prime_contract_version`) in addition to the core fields.
+
+**Record field names depend on `status` and `category`.** The API resolves a different domain for each, and records are returned with the API's own field names, not normalized:
+
+| Shape | Field names | Example fields |
+|---|---|---|
+| registered, `expense` or `all` | `prime_contract_*` | `prime_contract_id`, `prime_contract_purpose`, `prime_contracting_agency`, `prime_vendor_spent_to_date` |
+| registered, `revenue` | plain | `contract_id`, `purpose`, `agency`, `prime_mwbe_category`, `woman_owned_business`, `version` (no spent-to-date, no sub-vendors) |
+| `pending`, any category | plain | `contract_id`, `purpose`, `agency`, `received_date` |
 
 ```
 search_contracts(agency_code="858", fiscal_year="2024")
@@ -118,7 +126,7 @@ Look up a single contract by ID.
 |---|---|---|---|---|
 | `contract_id` | string | yes | — | e.g. `"CT185820201424467"` or `"DO185820252009241"` |
 | `status` | string | no | `registered` | `registered` or `pending` |
-| `category` | string | no | `expense` | `expense` or `revenue` |
+| `category` | string | no | `expense` | `expense` or `revenue`. Field names follow the same per-shape table as `search_contracts`. |
 
 ```
 get_contract("CT185820201424467")
@@ -501,10 +509,10 @@ This server pairs directly with:
 
 ## Releases
 
-**Before tagging, check the default response columns against the live API.** A single rejected response column fails the whole request, so it can disable a tool outright, and the published docs and config have been wrong about columns three times (#16, v1.6.1, #40). With no MCP client running:
+**Before tagging, check the default response columns against the live API.** A single rejected response column fails the whole request, so it can disable a tool outright, and default columns have been wrong four times (#16, v1.6.1, #40, #42). With no MCP client running:
 
 ```bash
-bash scripts/probe-api-spec.sh   # 35 paced requests, ~55s; run it once, alone
+bash scripts/probe-api-spec.sh   # 43 paced requests, ~65s; run it once, alone
 npm run check:columns            # must exit 0
 ```
 

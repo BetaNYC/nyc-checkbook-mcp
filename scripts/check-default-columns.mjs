@@ -8,18 +8,20 @@
 //
 // Makes NO network requests. It only reads a file the probe already wrote.
 //
-// Why this exists: three releases shipped a default response column the live API
+// Why this exists: four releases shipped a default response column the live API
 // rejects (#16 citywide `year`, v1.6.1 `sub_contract_registration_date`, #40
-// NYCHA `year` / OGE `apt_pin`). One rejected column fails the whole request, so
-// each one broke a tool for every call of the shape that rejects it (#40: one
-// shape each for NYCHA and OGE). Each was transcribed from published docs or
-// config, and each was patched by hand. This checks all of them at once.
+// NYCHA `year` / OGE `apt_pin`, #42 the expense list sent for registered
+// revenue). One rejected column fails the whole request, so each one broke a
+// tool for every call of the shape that rejects it (#40: one shape each for
+// NYCHA and OGE). The first three were transcribed from published docs or
+// config; #42 applied one shape's list to another. Each was patched by hand.
+// This checks all of them at once.
 //
 // What a finding means. The probe's lists are a FLOOR, not a ceiling (see
 // scripts/README.md): a name absent from a valid-values list has, more than
 // once, still worked. So a column missing from a list is reported as UNVERIFIED,
 // not as rejected. It still fails the check, because shipping an unverified
-// column is how all three outages happened. Resolve it by testing the column with
+// column is how every one of these outages happened. Resolve it by testing the column with
 // ONE paced live request, then either remove it from DEFAULT_COLUMNS or record
 // the evidence in LIVE_VERIFIED_ABSENT below.
 //
@@ -31,6 +33,8 @@
 // (nychaContractsColumns / nycedcContractsColumns in src/tools.ts), and each
 // COLUMN_CHECKS entry checks ONE shape's list against the probe variants for
 // that shape only. A column must be valid in every variant mapped to its shape.
+// The citywide Contracts domain also varies by (status, category) (#42), so
+// contractsColumns() picks Contracts, Contracts_revenue, or Contracts_pending.
 //
 // Exit codes: 0 every check passed; 1 at least one finding; 2 usage or I/O error.
 
@@ -51,25 +55,53 @@ export const COLUMN_CHECKS = [
   {
     name: "Contracts",
     domainKey: "Contracts",
-    tools: "search_contracts (registered/expense), get_contract",
-    probes: ["Contracts registered/expense", "Contracts registered/expense FY"],
+    tools: "search_contracts (registered, expense or all), get_contract (registered/expense)",
+    probes: [
+      "Contracts registered/expense",
+      "Contracts registered/expense FY",
+      "Contracts registered/all",
+      "Contracts registered/all FY",
+    ],
     columns: ({ defaultColumns }) => defaultColumns.Contracts,
   },
   {
     name: "Contracts + SUB_VENDOR_COLUMNS",
     domainKey: "Contracts",
-    tools: "search_contracts include_sub_vendors=true",
-    probes: ["Contracts registered/expense", "Contracts registered/expense FY"],
+    tools: "search_contracts registered expense/all, include_sub_vendors=true",
+    probes: [
+      "Contracts registered/expense",
+      "Contracts registered/expense FY",
+      "Contracts registered/all",
+      "Contracts registered/all FY",
+    ],
     columns: ({ defaultColumns, subVendorColumns }) => [
       ...defaultColumns.Contracts,
       ...subVendorColumns,
     ],
   },
   {
+    name: "Contracts_revenue",
+    domainKey: "Contracts_revenue",
+    tools: "search_contracts registered/revenue, get_contract registered/revenue (#42)",
+    probes: [
+      "Contracts registered/revenue",
+      "Contracts registered/revenue FY",
+      "Contracts registered/revenue contract_id",
+    ],
+    columns: ({ defaultColumns }) => defaultColumns.Contracts_revenue,
+  },
+  {
     name: "Contracts_pending",
     domainKey: "Contracts_pending",
-    tools: "search_contracts status=pending",
-    probes: ["Contracts pending/expense", "Contracts pending/expense FY"],
+    tools: "search_contracts status=pending, any category",
+    probes: [
+      "Contracts pending/expense",
+      "Contracts pending/expense FY",
+      "Contracts pending/revenue",
+      "Contracts pending/revenue FY",
+      "Contracts pending/all",
+      "Contracts pending/all FY",
+    ],
     columns: ({ defaultColumns }) => defaultColumns.Contracts_pending,
   },
   {
@@ -137,8 +169,8 @@ export const COLUMN_CHECKS = [
  * a green result is never read as covering them.
  */
 export const NOT_COVERED = [
-  "search_contracts / get_contract with category='revenue' or 'all' (sent with the " +
-    "Contracts list; the registered/revenue domain's live list has no prime_* columns)",
+  "get_contract with status='pending', or registered/expense, with its contract_id criterion " +
+    "(checked only against the same status/category probed without contract_id)",
   "search_revenue without fiscal_year",
   "search_nycha_contracts / search_nycedc_contracts with fiscal_year plus other criteria, " +
     "or without fiscal_year with criteria other than vendor_name / contract_id",

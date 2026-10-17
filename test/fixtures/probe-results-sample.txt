@@ -2,19 +2,26 @@ Fixture for test/check-default-columns.test.mjs. Text before the first section
 header is ignored by the parser.
 
 Provenance (real API output only; nothing here is hand-written):
-- Every section except the last two: scripts/probe-api-spec.sh, run once on
+- Every section before "Contracts_OGE FY": scripts/probe-api-spec.sh, run once on
   2026-10-16 (24 probes, all HTTP 200), trimmed to the COLUMNS sections the
   checker maps plus one CRITERIA section.
 - "Contracts_OGE FY" and "Contracts_NYCHA no FY": the live API's error text
   quoted in issue #40 (2026-10-15), from search_nycedc_contracts with
   fiscal_year=2025 and search_nycha_contracts with vendor_name only. Those are
   the exact call shapes the two new probe variants send.
+- The last seven sections (Contracts registered/revenue FY, registered/all,
+  registered/all FY, pending/revenue, pending/revenue FY, pending/all,
+  pending/all FY): seven paced `cols` probes run on 2026-10-16 for issue #42
+  (all HTTP 200), with the same request XML and criteria strings as
+  scripts/probe-api-spec.sh. Copied verbatim, minus the trailing DONE line.
 
 This is a snapshot, not a live oracle. It goes stale whenever Checkbook changes.
-Variants the probe gained after 2026-10-16 (Contracts FY, pending FY, Spending
-issue_date, Budget year, Budget no year, Payroll calendar_year, Contracts_NYCHA
-contract_id, Contracts_NYCHA no criteria, Contracts_OGE contract_id) are
-deliberately absent: none has been sent live, so there is no real output to use.
+Some variants the probe sends are deliberately absent, so the tests can prove
+that a missing variant is reported as MISSING-PROBE: Contracts registered/expense
+FY, pending/expense FY, Spending issue_date, Budget year, Budget no year, Payroll
+calendar_year, Contracts_NYCHA contract_id, Contracts_NYCHA no criteria,
+Contracts_OGE contract_id, and Contracts registered/revenue contract_id (that
+last one has never been sent live).
 
 ===== Contracts registered/expense :: COLUMNS =====
 Provided response column 'zzz_invalid' value is not allowed for 'Registered Contracts(expense) All Years' domain. Valid values are 'contract_class,contract_includes_sub_vendors,mocs_registered,document_code,parent_contract_id,prime_contract_apt_pin,percent_covid_spending,percent_other_spending,prime_contract_award_method,prime_contract_current_amount,prime_contract_end_date,prime_contract_expense_category,prime_contract_id,prime_contract_industry,prime_contract_original_amount,prime_contract_pin,prime_contract_purpose,prime_contract_registration_date,prime_contract_start_date,prime_contract_type,prime_oca_number,prime_contract_version,prime_contracting_agency,prime_vendor,prime_vendor_mwbe_category,prime_vendor_spent_to_date,prime_woman_owned_business,prime_emerging_business,sub_contract_current_amount,sub_contract_end_date,sub_contract_industry,sub_contract_original_amount,sub_contract_purpose,sub_contract_reference_id,sub_contract_start_date,sub_vendor,sub_vendor_mwbe_category,sub_vendor_paid_to_date,sub_contract_status,sub_woman_owned_business,sub_emerging_business,vendor_record_type'.
@@ -51,3 +58,24 @@ Provided response column 'apt_pin' value is not allowed for 'Registered Contract
 
 ===== Contracts_NYCHA no FY :: COLUMNS =====
 Provided response column 'year' value is not allowed for 'Contracts_nycha' domain. Valid values are 'contract_id,purchase_order_type,record_type,release_number,number_of_releases,item_category,item_description,quantity_ordered,shipment_number,responsibility_center,start_date,end_date,approved_date,line_current_amount,line_number,line_original_amount,line_invoiced_amount,release_current_amount,release_original_amount,release_invoiced_amount,contract_current_amount,contract_original_amount,contract_invoiced_amount,purpose,vendor,contract_type,award_method,industry,pin,location,grant_name,expenditure_type,funding_source,program,project'.
+
+===== Contracts registered/revenue FY :: COLUMNS =====
+Provided response column 'zzz_invalid' value is not allowed for 'Registered Contracts(revenue)' domain. Valid values are 'contract_id,purpose,version,year,original_amount,current_amount,prime_vendor,agency,contract_type,contract_class,award_method,start_date,end_date,registration_date,pin,apt_pin,document_code,prime_mwbe_category,industry,woman_owned_business,emerging_business'.
+
+===== Contracts registered/all :: COLUMNS =====
+Provided response column 'zzz_invalid' value is not allowed for 'Registered Contracts(all) All Years' domain. Valid values are 'contract_class,contract_includes_sub_vendors,mocs_registered,document_code,parent_contract_id,prime_contract_apt_pin,percent_covid_spending,percent_other_spending,prime_contract_award_method,prime_contract_current_amount,prime_contract_end_date,prime_contract_expense_category,prime_contract_id,prime_contract_industry,prime_contract_original_amount,prime_contract_pin,prime_contract_purpose,prime_contract_registration_date,prime_contract_start_date,prime_contract_type,prime_oca_number,prime_contract_version,prime_contracting_agency,prime_vendor,prime_vendor_mwbe_category,prime_vendor_spent_to_date,prime_woman_owned_business,prime_emerging_business,sub_contract_current_amount,sub_contract_end_date,sub_contract_industry,sub_contract_original_amount,sub_contract_purpose,sub_contract_reference_id,sub_contract_start_date,sub_vendor,sub_vendor_mwbe_category,sub_vendor_paid_to_date,sub_contract_status,sub_woman_owned_business,sub_emerging_business,vendor_record_type'.
+
+===== Contracts registered/all FY :: COLUMNS =====
+Provided response column 'zzz_invalid' value is not allowed for 'Registered Contracts(all)' domain. Valid values are 'contract_class,contract_includes_sub_vendors,mocs_registered,document_code,parent_contract_id,prime_contract_apt_pin,percent_covid_spending,percent_other_spending,prime_contract_award_method,prime_contract_current_amount,prime_contract_end_date,prime_contract_expense_category,prime_contract_id,prime_contract_industry,prime_contract_original_amount,prime_contract_pin,prime_contract_purpose,prime_contract_registration_date,prime_contract_start_date,prime_contract_type,prime_oca_number,prime_contract_version,prime_contracting_agency,prime_vendor,prime_vendor_mwbe_category,prime_vendor_spent_to_date,prime_woman_owned_business,prime_emerging_business,sub_contract_current_amount,sub_contract_end_date,sub_contract_industry,sub_contract_original_amount,sub_contract_purpose,sub_contract_reference_id,sub_contract_start_date,sub_vendor,sub_vendor_mwbe_category,sub_vendor_paid_to_date,sub_contract_status,sub_woman_owned_business,sub_emerging_business,vendor_record_type,year'.
+
+===== Contracts pending/revenue :: COLUMNS =====
+Provided response column 'zzz_invalid' value is not allowed for 'Pending Contracts(revenue)' domain. Valid values are 'contract_id,purpose,current_amount,prime_vendor,agency,contract_type,award_method,start_date,end_date,pin,apt_pin,parent_contract_id,received_date,document_code,original_amount,original_modified,industry,prime_mwbe_category,oca_number,version,woman_owned_business,emerging_business'.
+
+===== Contracts pending/revenue FY :: COLUMNS =====
+Provided response column 'zzz_invalid' value is not allowed for 'Pending Contracts(revenue)' domain. Valid values are 'contract_id,purpose,current_amount,prime_vendor,agency,contract_type,award_method,start_date,end_date,pin,apt_pin,parent_contract_id,received_date,document_code,original_amount,original_modified,industry,prime_mwbe_category,oca_number,version,woman_owned_business,emerging_business'.
+
+===== Contracts pending/all :: COLUMNS =====
+Provided response column 'zzz_invalid' value is not allowed for 'Pending Contracts(all)' domain. Valid values are 'contract_id,purpose,current_amount,prime_vendor,agency,contract_type,award_method,start_date,end_date,pin,apt_pin,parent_contract_id,received_date,document_code,original_amount,original_modified,industry,prime_mwbe_category,oca_number,version,woman_owned_business,emerging_business'.
+
+===== Contracts pending/all FY :: COLUMNS =====
+Provided response column 'zzz_invalid' value is not allowed for 'Pending Contracts(all)' domain. Valid values are 'contract_id,purpose,current_amount,prime_vendor,agency,contract_type,award_method,start_date,end_date,pin,apt_pin,parent_contract_id,received_date,document_code,original_amount,original_modified,industry,prime_mwbe_category,oca_number,version,woman_owned_business,emerging_business'.

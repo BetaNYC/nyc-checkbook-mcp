@@ -304,24 +304,39 @@ export const SUB_VENDOR_COLUMNS: string[] = [
   "sub_emerging_business",
 ];
 
+function criterionValue(criteria: Criteria[], name: string): string | undefined {
+  return criteria.find((x) => x.name === name)?.value;
+}
+
 /**
- * Select the response columns for a contracts search.
+ * Select the response columns for a citywide Contracts call (search_contracts,
+ * get_contract), given the criteria it sends (issue #42).
  *
- * Base set is DEFAULT_COLUMNS.Contracts (registered) or Contracts_pending.
- * Sub-vendor columns are appended only for registered contracts when
- * include_sub_vendors is requested — the pending column set uses a different,
- * incompatible token scheme.
+ * The live API resolves a different domain per (status, category), and the
+ * column vocabularies differ (probe 2026-10-16):
+ *
+ *   registered + expense | all  -> DEFAULT_COLUMNS.Contracts (prime_contract_*)
+ *   registered + revenue        -> DEFAULT_COLUMNS.Contracts_revenue
+ *   pending + any category      -> DEFAULT_COLUMNS.Contracts_pending
+ *
+ * fiscal_year does not change the selection: for every shape, each chosen
+ * column is in the live list both with and without fiscal_year.
+ *
+ * Sub-vendor columns are appended only for registered expense/all when
+ * include_sub_vendors is requested. The pending and registered/revenue domains
+ * list no sub_* columns, so the flag is ignored there.
+ *
+ * Decided from the built criteria, not the tool input, so what is decided
+ * matches what is sent. A missing status/category means the tools' defaults
+ * (registered, expense).
  */
-export function contractsColumns(
-  status: "registered" | "pending",
-  includeSubVendors: boolean
-): string[] {
-  const base =
-    status === "pending" ? DEFAULT_COLUMNS["Contracts_pending"] : DEFAULT_COLUMNS["Contracts"];
-  if (includeSubVendors && status !== "pending") {
-    return [...base, ...SUB_VENDOR_COLUMNS];
-  }
-  return base;
+export function contractsColumns(criteria: Criteria[], includeSubVendors = false): string[] {
+  const status = criterionValue(criteria, "status") ?? "registered";
+  const category = criterionValue(criteria, "category") ?? "expense";
+  if (status === "pending") return DEFAULT_COLUMNS["Contracts_pending"];
+  if (category === "revenue") return DEFAULT_COLUMNS["Contracts_revenue"];
+  const base = DEFAULT_COLUMNS["Contracts"];
+  return includeSubVendors ? [...base, ...SUB_VENDOR_COLUMNS] : base;
 }
 
 // ─── Call-shape-dependent columns (issue #40) ────────────────────────────────
@@ -647,7 +662,13 @@ export function registerTools(server: McpServer): void {
           .enum(["expense", "revenue", "all"])
           .optional()
           .default("expense")
-          .describe("Contract category (default: expense)"),
+          .describe(
+            "Contract category (default: expense). Record field names follow the API's own " +
+              "domain and differ by shape: registered expense/all use prime_contract_* names " +
+              "(prime_contract_id, prime_contract_purpose, ...); registered revenue and every " +
+              "pending search use plain names (contract_id, purpose, agency, ...). Records are " +
+              "returned as the API sends them, not normalized."
+          ),
         fiscal_year: fiscalYearSchema,
         agency_code: z
           .string()
@@ -751,7 +772,8 @@ export function registerTools(server: McpServer): void {
           .describe(
             "Include sub-vendor / subcontractor detail columns (sub_vendor, " +
               "sub_vendor_mwbe_category, sub_contract_current_amount, etc.) in the response. " +
-              "Applies to registered contracts only; ignored for status='pending'."
+              "Applies to registered expense/all contracts only; ignored for status='pending' " +
+              "and for category='revenue', whose domains list no sub-vendor columns."
           ),
         page: pageSchema,
         page_size: pageSizeSchema,
@@ -762,10 +784,11 @@ export function registerTools(server: McpServer): void {
         if (input.vendor_name) {
           throw new Error(VENDOR_NAME_UNSUPPORTED_MESSAGE);
         }
+        const criteria = contractsCriteria(input);
         return runSearch(
           "Contracts",
-          contractsColumns(input.status, input.include_sub_vendors),
-          contractsCriteria(input),
+          contractsColumns(criteria, input.include_sub_vendors),
+          criteria,
           input.page,
           input.page_size
         );
@@ -777,7 +800,9 @@ export function registerTools(server: McpServer): void {
     {
       description:
         "Look up a single NYC contract by its contract ID. Returns full contract details. " +
-        "Use this after finding a contract ID via search_contracts or search_spending.",
+        "Use this after finding a contract ID via search_contracts or search_spending. " +
+        "Field names follow status/category, as in search_contracts: registered expense uses " +
+        "prime_contract_* names, registered revenue and pending use plain names (contract_id, purpose, ...).",
       inputSchema: strictSchema({
         contract_id: z
           .string()
@@ -796,16 +821,19 @@ export function registerTools(server: McpServer): void {
     },
     async ({ contract_id, status, category }) =>
       guard(async () => {
+        const criteria: Criteria[] = [
+          { name: "status", type: "value", value: status },
+          { name: "category", type: "value", value: category },
+          { name: "contract_id", type: "value", value: contract_id },
+        ];
         const result = await callCheckbookApi({
           type_of_data: "Contracts",
           records_from: 1,
           max_records: 10,
-          criteria: [
-            { name: "status", type: "value", value: status },
-            { name: "category", type: "value", value: category },
-            { name: "contract_id", type: "value", value: contract_id },
-          ],
-          response_columns: DEFAULT_COLUMNS["Contracts"],
+          criteria,
+          // Per (status, category), as search_contracts does (#42). Sending the
+          // expense list for category=revenue failed every revenue lookup.
+          response_columns: contractsColumns(criteria),
         });
         // No `error` field: an upstream failure throws (issue #21) and is
         // surfaced by guard(), so `records` is only ever a genuine result set.

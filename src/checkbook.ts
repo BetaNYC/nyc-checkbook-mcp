@@ -600,6 +600,38 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "pin",
     "received_date",
   ],
+  // Registered REVENUE contracts (status=registered, category=revenue), issue
+  // #42. This domain does NOT use the prime_contract_* vocabulary of
+  // registered/expense: sending DEFAULT_COLUMNS.Contracts failed every revenue
+  // search live (2026-10-16, 1106 on 'prime_contract_id' for 'Registered
+  // Contracts(revenue) All Years'). Every name below is in BOTH live valid lists,
+  // 'Registered Contracts(revenue) All Years' (no fiscal_year) and 'Registered
+  // Contracts(revenue)' (with fiscal_year), probe 2026-10-16. "year" is listed
+  // only with fiscal_year, so it is left out. The domain lists no sub_* columns
+  // and no spent_to_date. Selected by contractsColumns() in tools.ts. The other
+  // shapes need no list of their own: registered/all lists the same
+  // prime_contract_* names as registered/expense, and every pending shape
+  // (expense, revenue, all, with or without fiscal_year) lists the same names as
+  // pending/expense.
+  Contracts_revenue: [
+    "contract_id",
+    "prime_vendor",
+    "purpose",
+    "agency",
+    "current_amount",
+    "original_amount",
+    "start_date",
+    "end_date",
+    "award_method",
+    "contract_type",
+    "prime_mwbe_category",
+    "industry",
+    "pin",
+    "woman_owned_business",
+    "emerging_business",
+    "contract_class",
+    "version",
+  ],
   // NYCEDC / Other Government Entities (OGE) contracts. Domain token
   // "Contracts_OGE"; supports registered expense contracts only. Derived from
   // the CheckbookNYC API config (checkbook_api/src/config/contracts_oge.json,
