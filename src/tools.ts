@@ -367,7 +367,8 @@ export function contractsColumns(criteria: Criteria[], includeSubVendors = false
 // depending on whether fiscal_year is among the criteria sent. These columns are
 // valid in one shape only, so they are added for that shape and never otherwise.
 // Source: the live API's own valid-values lists, never the published config
-// (which lists both unconditionally). Checked by scripts/check-default-columns.mjs
+// (which lists NYCHA `year` only in its fiscal-year block, matching the API, but
+// lists OGE `apt_pin` in both blocks, which the API does not). Checked by scripts/check-default-columns.mjs
 // against the probe variant for each shape.
 
 /**
