@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.3] - 2026-10-16
+
+### Fixed
+
+- **`search_nycha_contracts` and `search_nycedc_contracts` errored on every call
+  (#40).** Each default response-column list carried one column the live API
+  rejects: `year` for `Contracts_NYCHA` and `apt_pin` for `Contracts_OGE`. One bad
+  column fails the whole request, so both tools had never returned data since they
+  were added in 1.2.0 (#7). Both columns are removed. The comment claiming both
+  domains accept `year` is corrected: the live API accepts it for OGE and rejects
+  it for NYCHA.
+- New tests check each default list against the live API's own "Valid values"
+  lists, not the published config, plus frozen lists and explicit regression
+  asserts. Verified live on 2026-10-15 with one paced request per tool, both
+  HTTP 200 with a record.
+
 ## [1.6.2] - 2026-10-11
 
 ### Fixed

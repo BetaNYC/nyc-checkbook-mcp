@@ -574,9 +574,10 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     // All Years') rejects it — "Provided response column 'year' value is not
     // allowed ... Valid values are '...prime_contract_id,...prime_vendor,...'"
     // (observed 2026-07-16, issue #16). The domain's response vocabulary is the
-    // prime_contract_* / prime_vendor set. (OGE and NYCHA are distinct domains
-    // whose configs DO list a "year" rowElement — see Contracts_OGE /
-    // Contracts_NYCHA below — so this omission is citywide-Contracts-only.)
+    // prime_contract_* / prime_vendor set. OGE and NYCHA are distinct domains
+    // with their own vocabularies: the live API ACCEPTS "year" for
+    // Contracts_OGE but REJECTS it for Contracts_NYCHA (issue #40, observed
+    // 2026-10-15), even though both published configs list a "year" rowElement.
     // Added v1.2.0 — documented Contracts response columns confirmed against
     // https://www.checkbooknyc.com/contract-api (2026-07-09). WBE/EBE flags
     // (issue #9) and low-priority lineage/registration columns (issue #10).
@@ -606,6 +607,8 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
   // "Contracts_OGE"; supports registered expense contracts only. Response
   // column tokens transcribed verbatim from the CheckbookNYC API config
   // (checkbook_api/src/config/contracts_oge.json, rowElements) — 2026-07-09.
+  // "apt_pin" removed: the live API rejects it as a response column for
+  // 'Registered Contracts_oge(expense)' (issue #40, observed 2026-10-15).
   Contracts_OGE: [
     "other_government_entities",
     "prime_vendor",
@@ -617,7 +620,6 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
     "original_amount",
     "current_amount",
     "spent_to_date",
-    "apt_pin",
     "pin",
     "contract_type",
     "award_method",
@@ -634,8 +636,9 @@ export const DEFAULT_COLUMNS: Record<string, string[]> = {
   // "Contracts_NYCHA"; release/line-item granularity. Response column tokens
   // transcribed verbatim from the CheckbookNYC API config
   // (checkbook_api/src/config/contracts_nycha.json, rowElements) — 2026-07-09.
+  // "year" removed: the live API rejects it as a response column for
+  // 'Contracts_nycha' (issue #40, observed 2026-10-15).
   Contracts_NYCHA: [
-    "year",
     "contract_id",
     "purchase_order_type",
     "record_type",
