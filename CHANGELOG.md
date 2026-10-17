@@ -88,11 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every variant (one transport failure, retried, below) and `npm run
   check:columns` exited 0 for every list. `search_contracts` with
   `category: "all"` and with `status: "pending", category: "revenue"` returned
-  records. Registered revenue returned the silent empty above. **The 16-column
-  revenue list in this release has not been sent live with rows returned yet**;
-  one paced `search_contracts` registered revenue call (with and without
-  `fiscal_year`) and one `get_contract` for a revenue contract are owed before
-  tagging.
+  records. Registered revenue returned the silent empty above. Then, against
+  this release's 16-column list, one paced call per shape (3 s apart, no 403s),
+  each returning at least one row: `search_contracts` registered expense (with
+  and without `fiscal_year`, and with `include_sub_vendors`), registered revenue
+  without `fiscal_year`, `all` (with and without), pending expense, revenue and
+  `all`; `get_contract` for a revenue and an expense contract;
+  `search_nycha_contracts` by `vendor_name` and by `fiscal_year`;
+  `search_nycedc_contracts` by `fiscal_year` and by `contract_id`.
+- **Known upstream limitation: registered revenue with `fiscal_year` returns
+  no rows.** The Checkbook API reports a match count (399 for FY2025) but sends
+  no rows, whatever response columns are requested, including `contract_id`
+  alone (live, 2026-10-16, bisected over every column). It is a server-side
+  defect this release cannot fix. The silent-empty guard reports it as an error
+  rather than as "no records". Search registered revenue without `fiscal_year`
+  and filter by dates instead.
 - **`scripts/probe-api-spec.sh` no longer dies silently on a transport
   failure.** A curl failure (exit 92, an HTTP/2 stream error, seen on probe 36
   on 2026-10-16) killed the script under `set -e`, leaving an empty section and

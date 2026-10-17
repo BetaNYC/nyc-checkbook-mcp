@@ -651,7 +651,9 @@ export function registerTools(server: McpServer): void {
         "Filter by agency, vendor_code, contract ID, date range, amount range, industry, MWBE category, and more. " +
         "NOTE: the contracts API has NO vendor-name filter — vendors are filtered only by vendor_code. " +
         "To find contracts by vendor NAME, use search_spending (payee_name) for checks paid to a named vendor. " +
-        "Many contracts are held by resellers, so a product/software name may not match the contract's own vendor.",
+        "Many contracts are held by resellers, so a product/software name may not match the contract's own vendor. " +
+        "KNOWN API LIMITATION: registered revenue contracts (category 'revenue') with fiscal_year return no rows " +
+        "from Checkbook NYC (a match count, no records), so the tool returns an error; omit fiscal_year and filter by dates instead.",
       inputSchema: strictSchema({
         status: z
           .enum(["registered", "pending"])

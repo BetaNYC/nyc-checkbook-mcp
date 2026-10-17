@@ -97,6 +97,8 @@ Search registered or pending NYC contracts with structured filters.
 | `page` | number | no | `1` | Pagination |
 | `page_size` | number | no | `50` | Results per page (max 1000) |
 
+**Known API limitation:** registered `revenue` searches with `fiscal_year` return no rows. Checkbook NYC reports a match count but sends no records, whatever columns are requested (live, 2026-10-16). The tool returns an error rather than an empty page. Search without `fiscal_year` and narrow by date range instead.
+
 Registered `expense` and `all` responses include documented WBE/EBE flags (`prime_woman_owned_business`, `prime_emerging_business`) and lineage/registration columns (`mocs_registered`, `contract_class`, `parent_contract_id`, `prime_contract_version`) in addition to the core fields.
 
 **Record field names depend on `status` and `category`.** The API resolves a different domain for each, and records are returned with the API's own field names, not normalized:
@@ -516,7 +518,7 @@ bash scripts/probe-api-spec.sh   # 43 paced requests, ~65s; run it once, alone
 npm run check:columns            # must exit 0
 ```
 
-**Then make one paced live call per contract shape and confirm each returns at least one row**: `search_contracts` for registered expense, registered revenue (with and without `fiscal_year`), registered `all`, and pending; `get_contract` for one revenue contract; plus `search_nycha_contracts` and `search_nycedc_contracts` with and without `fiscal_year`. Space the calls out, and run them alone. The checker cannot catch this: a column the API *accepts* can still make it return no rows (`contract_class` on revenue contracts, #42). The server now reports that case as an error ("matched N records but returned none"), not as an empty page, so an `isError` here is the signal to bisect the column list.
+**Then make one paced live call per contract shape and confirm each returns at least one row**: `search_contracts` for registered expense, registered revenue (without `fiscal_year`; with it, the API is known to return no rows, see below), registered `all`, and pending; `get_contract` for one revenue contract; plus `search_nycha_contracts` and `search_nycedc_contracts` with and without `fiscal_year`. Space the calls out, and run them alone. The checker cannot catch this: a column the API *accepts* can still make it return no rows (`contract_class` on revenue contracts, #42). The server now reports that case as an error ("matched N records but returned none"), not as an empty page, so an `isError` here is the signal to bisect the column list. If even `contract_id` alone returns no rows, the defect is upstream, not in a column: registered revenue with `fiscal_year` is one such case (live, 2026-10-16; 399 matched, no rows for any column set).
 
 If the probe aborts with a 403, that is a rate-limit block: stop, and do not re-run it to check. If the checker reports `UNVERIFIED`, follow [scripts/README.md](scripts/README.md#checking-the-default-response-columns-pre-release). `probe-results.txt` is git-ignored.
 
