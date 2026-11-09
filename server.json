@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.BetaNYC/nyc-checkbook-mcp",
+  "title": "NYC Checkbook",
+  "description": "NYC Checkbook data: city spending, contracts, budget, payroll, and revenue from Checkbook NYC",
+  "repository": {
+    "url": "https://github.com/BetaNYC/nyc-checkbook-mcp",
+    "source": "github"
+  },
+  "version": "1.6.4",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@betanyc/nyc-checkbook-mcp",
+      "version": "1.6.4",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "CHECKBOOK_ENABLE_SMART_SEARCH",
+          "description": "Set to 1 to enable smart_search, an unsupported web endpoint that is off by default",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
