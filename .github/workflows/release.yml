@@ -9,6 +9,9 @@
 # publish rights to @betanyc/nyc-checkbook-mcp). Provenance requires the
 # id-token: write permission and publishing from GitHub Actions.
 #
+# It also checks that server.json (the MCP Registry listing) carries the same
+# version and name as package.json; publish-mcp.yml lists it after this succeeds.
+#
 # This never runs on branch pushes or PRs — only tags. Do not tag until the
 # version bump is merged to main.
 
@@ -44,6 +47,14 @@ jobs:
 
       - name: Test
         run: npm test --if-present
+
+      - name: Verify server.json versions match package.json
+        run: |
+          node -e '
+            const p = require("./package.json"), s = require("./server.json");
+            const bad = [s.version, ...s.packages.map((x) => x.version)].filter((v) => v !== p.version);
+            if (bad.length || s.name !== p.mcpName) { console.error("server.json is out of step with package.json"); process.exit(1); }
+          '
 
       - name: Verify tag matches package.json version
         run: |

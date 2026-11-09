@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.4] - 2026-11-09
+
+### Added
+
+- `server.json` and `.github/workflows/publish-mcp.yml` to list this server in
+  the official MCP Registry as `io.github.BetaNYC/nyc-checkbook-mcp`, and
+  `glama.json` to claim it on Glama. `package.json` now carries `mcpName`, which
+  the registry requires the published npm package to have. The Release workflow
+  now checks that `server.json` matches `package.json` before publishing.
+
 ### Documentation
 
 - Corrected the #40 account in the 1.6.3 entry, `scripts/README.md` defects 5

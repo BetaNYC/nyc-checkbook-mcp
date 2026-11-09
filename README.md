@@ -342,6 +342,8 @@ Natural-language questions this MCP can answer today, by persona:
 npx @betanyc/nyc-checkbook-mcp
 ```
 
+From 1.6.4, each release is also published to the [official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.BetaNYC/nyc-checkbook-mcp`.
+
 ### Global install
 
 ```bash
