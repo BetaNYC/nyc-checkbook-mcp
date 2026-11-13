@@ -20,7 +20,7 @@ servers, and `WHATS-CHANGED.md`, the reader-facing record of changes. Tracking: 
 - `about_betanyc`: who built the server, the repository, where to report a bug in this
   server or ask for a new feature, and BetaNYC's links.
 - `src/betanyc-tools.ts`, copied unchanged from the workspace's
-  `scripts/mcp_shared/betanyc-tools.ts` (v1.2.0). Never edit the copy; change the canonical
+  `scripts/mcp_shared/betanyc-tools.ts` (v1.2.1). Never edit the copy; change the canonical
   file and copy it again. Its tools are defined in plain JSON Schema, and
   `McpServer.registerTool` takes zod, so `src/betanyc.ts` registers both through
   `registerTool` with zod input schemas equivalent to the module's (same names, types,
@@ -33,7 +33,7 @@ servers, and `WHATS-CHANGED.md`, the reader-facing record of changes. Tracking: 
   disclaimer.
 - `WHATS-CHANGED.md`, backfilled to 1.0.0, shipped in the npm package (`files`). No site:
   GitHub's rendering of the file is the page, linked near the top of the README.
-- `scripts/whats_changed.py`, copied unchanged from the workspace (v1.2.0). CI runs a
+- `scripts/whats_changed.py`, copied unchanged from the workspace (v1.2.1). CI runs a
   `whats-changed` job with `check --base-ref` (old entries are append-only, and a version
   bump needs an entry). The release workflow runs `check --release` before `npm publish`,
   so a release cannot ship while the `WHATS-CHANGED.md` entry still says `Unreleased`.

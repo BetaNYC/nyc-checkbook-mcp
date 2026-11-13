@@ -77,7 +77,7 @@ To report a bug in this server or ask for a new feature, [open an issue on GitHu
 ## 2026-07-06: Payroll, budget and revenue searches rebuilt to match the API
 
 - **Tags:** MCP
-- **What changed:** The payroll, budget and revenue searches each sent a search term the Checkbook NYC API does not accept (budget searches sent a fiscal year term the budget data does not have), and payroll and revenue searches failed as a result; version 1.1.0 rebuilds all three from the API's own list of accepted terms. Before July 29 this showed as zero records; see [the correction of July 29](#2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records). Payroll searches now need a fiscal or calendar year, and there is no search by employee name, because the API has none. Smart search, which the Checkbook NYC website blocks for programs like this one, now says it is unavailable and suggests other tools.
+- **What changed:** The payroll, budget and revenue searches each sent a search term the Checkbook NYC API does not accept (budget searches sent a fiscal year term the budget data does not have), and all three failed as a result; version 1.1.0 rebuilds all three from the API's own list of accepted terms. Before July 29 this showed as zero records; see [the correction of July 29](#2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records). Payroll searches now need a fiscal or calendar year, and there is no search by employee name, because the API has none. Smart search, which the Checkbook NYC website blocks for programs like this one, now says it is unavailable and suggests other tools.
 - **MCP version:** [nyc-checkbook-mcp 1.1.0](CHANGELOG.md#110---2026-07-06)
 - **More detail:** [The fix](https://github.com/BetaNYC/nyc-checkbook-mcp/pull/4)
 

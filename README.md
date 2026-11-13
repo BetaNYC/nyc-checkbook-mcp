@@ -538,7 +538,7 @@ Publishing is automated. Pushing a tag of the form `v<version>` (matching `packa
 3. adds the dated anchor to the MCP version link, computed with the script, never by hand: `python3 -c "import sys; sys.path.insert(0,'scripts'); import whats_changed as w; print(w.github_slug('[X.Y.Z] - YYYY-MM-DD'))"`;
 4. runs `python3 scripts/whats_changed.py check WHATS-CHANGED.md --release`.
 
-That commit may also reword the entry's text: an entry counts as published only once it has a date, so no `Whats-changed-edit:` trailer is needed. Then tag that commit `vX.Y.Z` and push the tag. The Release workflow runs the same `check --release` before `npm publish` and stops while an Unreleased entry is left. A release that changes nothing a reader would notice (metadata only) gets no entry; its commit carries a `No-whats-changed: <reason>` trailer instead.
+That commit may also reword the entry's body, since an entry counts as published only once it has a date, so no `Whats-changed-edit:` trailer is needed. Its title may never change, while Unreleased or when dated: CI checks it. Then tag that commit `vX.Y.Z` and push the tag. The Release workflow runs the same `check --release` before `npm publish` and stops while an Unreleased entry is left. A release that changes nothing a reader would notice (metadata only) gets no entry; its commit carries a `No-whats-changed: <reason>` trailer instead.
 
 ---
 
