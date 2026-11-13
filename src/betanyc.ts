@@ -3,25 +3,29 @@
  * (betanyc-ai-workspace platform/system/whats-changed-standard.md § 7).
  *
  * betanyc-tools.ts is a copy of the workspace's canonical file: never edit it here. It defines
- * both tools with plain JSON Schema (inputSchema and outputSchema) and validates its own
- * arguments, so every BetaNYC server advertises exactly the same tools. McpServer.registerTool
- * only takes zod schemas (SDK 1.29.0, server/mcp.js `getZodSchemaObject`), so the two tools are
- * not registered through it. Instead, `withBetanycTools` lets McpServer install its own
- * tools/list and tools/call handlers as usual, records them, and replaces them with handlers
- * that answer the two shared tools and pass every other request to McpServer's.
+ * both tools in plain JSON Schema. McpServer.registerTool takes zod schemas, so this file
+ * registers the two tools through that documented API with zod input schemas equivalent to
+ * the module's (same names, types, optional fields, pattern and limits; `tag` is any string,
+ * because the module accepts it in any case), and the handlers return the module's answers
+ * (text plus structuredContent) unchanged. test/betanyc-tools.test.mjs compares the
+ * advertised schemas with the module's field by field, so a change on either side fails.
+ *
+ * No outputSchema is registered: registerTool would need the module's nested output schema
+ * rewritten in zod, a second hand-kept copy of it. structuredContent is still returned, and
+ * the tests validate it against the module's own outputSchema.
  *
  * WHATS-CHANGED.md ships in the npm package (package.json `files`), one level above dist/.
  * The tools read it locally and never touch the network.
  */
+import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  type CallToolResult,
-  type ListToolsResult,
-  type Tool,
-} from "@modelcontextprotocol/sdk/types.js";
-import { createBetanycTools } from "./betanyc-tools.js";
+  ABOUT_BETANYC_TOOL,
+  MAX_LIMIT,
+  WHATS_CHANGED_TOOL,
+  createBetanycTools,
+} from "./betanyc-tools.js";
 import { VERSION } from "./version.js";
 
 export const betanyc = createBetanycTools({
@@ -31,49 +35,52 @@ export const betanyc = createBetanycTools({
   whatsChangedPath: new URL("../WHATS-CHANGED.md", import.meta.url),
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RequestHandler = (request: any, extra: any) => unknown;
+/** The module's own JSON Schema property, for its description and pattern. */
+function moduleProperty(name: string): { description: string; pattern?: string } {
+  const props = WHATS_CHANGED_TOOL.inputSchema.properties as Record<string, { description: string; pattern?: string }>;
+  return props[name];
+}
 
-/**
- * Run `registerOwnTools` (this server's McpServer.registerTool calls), then add the two
- * shared tools. Throws at startup if McpServer did not install its tool handlers through
- * `server.server.setRequestHandler`, so an SDK change shows when the server starts.
- */
-export function withBetanycTools(server: McpServer, registerOwnTools: (server: McpServer) => void): void {
-  const lowLevel = server.server;
-  const captured = new Map<unknown, RequestHandler>();
-  const original = lowLevel.setRequestHandler;
-  // An own property shadows the prototype method only while this server's tools register.
-  lowLevel.setRequestHandler = ((schema: unknown, handler: RequestHandler) => {
-    captured.set(schema, handler);
-    return original.call(lowLevel, schema as never, handler as never);
-  }) as typeof original;
-  try {
-    registerOwnTools(server);
-  } finally {
-    delete (lowLevel as { setRequestHandler?: unknown }).setRequestHandler;
-  }
+// The messages are the module's own, so an argument error reads the same here as on every
+// other BetaNYC server. zod checks the format; the module still checks that a date is real.
+const SINCE_MESSAGE = "since must be a real date written YYYY-MM-DD, for example 2026-11-01.";
+const LIMIT_MESSAGE = `limit must be a whole number from 1 to ${MAX_LIMIT}.`;
 
-  const listOwn = captured.get(ListToolsRequestSchema);
-  const callOwn = captured.get(CallToolRequestSchema);
-  if (!listOwn || !callOwn) {
-    throw new Error(
-      "withBetanycTools: McpServer did not install its tools/list and tools/call handlers " +
-        "through setRequestHandler while the tools registered. The MCP SDK may have changed; " +
-        "see src/betanyc.ts."
+/** zod input schemas equivalent to the module's JSON input schemas (compared in the tests). */
+export const BETANYC_INPUT_SCHEMAS = {
+  whats_changed: z
+    .object({
+      since: z
+        .string()
+        .regex(new RegExp(moduleProperty("since").pattern ?? "^\\d{4}-\\d{2}-\\d{2}$"), SINCE_MESSAGE)
+        .optional()
+        .describe(moduleProperty("since").description),
+      tag: z.string().optional().describe(moduleProperty("tag").description),
+      limit: z
+        .number({ invalid_type_error: LIMIT_MESSAGE })
+        .int(LIMIT_MESSAGE)
+        .min(1, LIMIT_MESSAGE)
+        .max(MAX_LIMIT, LIMIT_MESSAGE)
+        .optional()
+        .describe(moduleProperty("limit").description),
+    })
+    .strict(),
+  about_betanyc: z.object({}).strict(),
+};
+
+/** Register both tools on an McpServer, through registerTool. */
+export function registerBetanycTools(server: McpServer): void {
+  for (const def of [WHATS_CHANGED_TOOL, ABOUT_BETANYC_TOOL]) {
+    const name = def.name as keyof typeof BETANYC_INPUT_SCHEMAS;
+    server.registerTool(
+      name,
+      {
+        title: def.title,
+        description: def.description,
+        inputSchema: BETANYC_INPUT_SCHEMAS[name],
+        annotations: def.annotations,
+      },
+      async (args: unknown) => betanyc.call(name, args) as CallToolResult
     );
   }
-
-  lowLevel.setRequestHandler(ListToolsRequestSchema, async (request, extra) => {
-    const own = (await listOwn(request, extra)) as ListToolsResult;
-    const clash = own.tools.find((t) => betanyc.handles(t.name));
-    if (clash) throw new Error(`withBetanycTools: this server already has a tool named ${clash.name}`);
-    return { ...own, tools: [...own.tools, ...(betanyc.tools as unknown as Tool[])] };
-  });
-
-  lowLevel.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const { name, arguments: args } = request.params;
-    if (betanyc.handles(name)) return betanyc.call(name, args) as CallToolResult;
-    return (await callOwn(request, extra)) as CallToolResult;
-  });
 }

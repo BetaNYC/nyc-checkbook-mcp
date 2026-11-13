@@ -1,8 +1,8 @@
 // whats_changed and about_betanyc, the two tools every BetaNYC MCP server carries
 // (betanyc-ai-workspace platform/system/whats-changed-standard.md § 7). They read this repo's
-// WHATS-CHANGED.md and never touch the network. This server uses McpServer, so the tools are
-// added by src/betanyc.ts (withBetanycTools), which wraps McpServer's tools/list and
-// tools/call handlers; these tests go through those handlers with the SDK client.
+// WHATS-CHANGED.md and never touch the network. This server uses McpServer, so src/betanyc.ts
+// registers them with registerTool and zod input schemas equivalent to the module's JSON
+// Schemas; the first test compares the two field by field so either side drifting fails.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -11,9 +11,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import { registerTools } from "../dist/tools.js";
-import { betanyc, withBetanycTools } from "../dist/betanyc.js";
-import { SHARED_MODULE_VERSION } from "../dist/betanyc-tools.js";
+import { betanyc } from "../dist/betanyc.js";
+import { SHARED_MODULE_VERSION, BETANYC_TOOLS } from "../dist/betanyc-tools.js";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url)));
 const whatsChanged = readFileSync(new URL("../WHATS-CHANGED.md", import.meta.url), "utf8");
@@ -26,6 +27,14 @@ const CHECKBOOK_TOOLS = 10; // registered by registerCheckbookTools, smart_searc
 
 const textOf = (r) => r.content[0].text;
 
+/** Validate structuredContent against the module's own outputSchema, with the SDK's validator. */
+const ajv = new AjvJsonSchemaValidator();
+function assertMatchesModuleOutputSchema(name, structured) {
+  const def = BETANYC_TOOLS.find((t) => t.name === name);
+  const result = ajv.getValidator(def.outputSchema)(structured);
+  assert.equal(result.valid, true, `${name}: ${result.errorMessage}`);
+}
+
 /** A client connected in memory to a server with the real tools registered. */
 async function connect() {
   const server = new McpServer({ name: "nyc-checkbook-mcp", version: pkg.version });
@@ -36,20 +45,32 @@ async function connect() {
   return { client, close: async () => { await client.close(); await server.close(); } };
 }
 
-test("tools/list has every Checkbook tool plus the two shared ones, each advertised as the shared module defines it", async () => {
+test("tools/list advertises the two shared tools with input schemas equal to the module's, field by field", async () => {
   const { client, close } = await connect();
   try {
     const { tools } = await client.listTools();
     assert.equal(tools.length, CHECKBOOK_TOOLS + 2);
     assert.equal(new Set(tools.map((t) => t.name)).size, tools.length, "tool names are unique");
-    for (const def of betanyc.tools) {
+    for (const def of BETANYC_TOOLS) {
       const t = tools.find((x) => x.name === def.name);
       assert.ok(t, def.name);
-      assert.deepEqual(t.inputSchema, def.inputSchema, `${def.name} inputSchema is the shared one`);
-      assert.deepEqual(t.outputSchema, def.outputSchema, `${def.name} outputSchema is the shared one`);
-      assert.equal(t.outputSchema.type, "object", def.name);
-      assert.equal(t.annotations.readOnlyHint, true, def.name);
-      assert.equal(t.inputSchema.additionalProperties, false, def.name);
+      assert.equal(t.title, def.title, `${def.name} title`);
+      assert.equal(t.description, def.description, `${def.name} description`);
+      assert.deepEqual(t.annotations, def.annotations, `${def.name} annotations`);
+      const got = t.inputSchema;
+      const want = def.inputSchema;
+      assert.equal(got.type, want.type, `${def.name} type`);
+      assert.equal(got.additionalProperties, want.additionalProperties, `${def.name} additionalProperties`);
+      assert.deepEqual(got.required ?? [], want.required ?? [], `${def.name}: the same fields are required (none)`);
+      assert.deepEqual(Object.keys(got.properties).sort(), Object.keys(want.properties).sort(), `${def.name} property names`);
+      for (const [prop, w] of Object.entries(want.properties)) {
+        // Every keyword the module declares (type, pattern, minimum, maximum, description),
+        // and no extra keyword on our side that would narrow it (for example an enum on tag).
+        assert.deepEqual(got.properties[prop], w, `${def.name}.${prop}`);
+      }
+      // Only $schema may be added by the SDK's zod-to-JSON-Schema conversion.
+      const extra = Object.keys(got).filter((k) => !(k in want) && k !== "$schema");
+      assert.deepEqual(extra, [], `${def.name}: no extra top-level keywords`);
     }
   } finally {
     await close();
@@ -67,6 +88,7 @@ test("whats_changed answers from this repo's WHATS-CHANGED.md, with every entry 
     assert.equal(s.history_begins, "2026-05-21");
     assert.equal(s.total_matching, entryCount);
     assert.equal(s.returned, entryCount);
+    assertMatchesModuleOutputSchema("whats_changed", s);
     if (unreleased) assert.match(s.note, /not released yet/, "the note says an unreleased entry is left out");
     else assert.equal(s.note, null);
     assert.doesNotMatch(s.note ?? "", /error/, "no entry was left out for an error");
@@ -100,18 +122,27 @@ test("whats_changed filters: Correction entries carry advice for people who used
 });
 
 test("whats_changed rejects bad arguments by name, through the server's tools/call", async () => {
+  // zod (registerTool) rejects the format, the range and unknown keys, with the module's
+  // wording where zod lets us set it; the module still checks that a date is a real day and
+  // that a tag is one of the four.
   const { client, close } = await connect();
   try {
     for (const [args, re] of [
       [{ since: "last week" }, /since must be a real date/],
+      [{ since: "2026-02-30" }, /since must be a real date/],
       [{ tag: "Parks" }, /tag must be one of/],
       [{ limit: 51 }, /limit must be a whole number from 1 to 50/],
-      [{ vendor_name: "x" }, /does not accept 'vendor_name'/],
+      [{ limit: 2.5 }, /limit must be a whole number from 1 to 50/],
+      [{ limit: "5" }, /limit must be a whole number from 1 to 50/],
+      [{ vendor_name: "x" }, /vendor_name/],
     ]) {
       const r = await client.callTool({ name: "whats_changed", arguments: args });
       assert.equal(r.isError, true, JSON.stringify(args));
-      assert.match(textOf(r), re);
+      assert.match(textOf(r), re, JSON.stringify(args));
     }
+    const lower = await client.callTool({ name: "whats_changed", arguments: { tag: "correction" } });
+    assert.notEqual(lower.isError, true, "any case is accepted for tag");
+    assert.equal(lower.structuredContent.filters.tag, "Correction");
   } finally {
     await close();
   }
@@ -132,9 +163,10 @@ test("about_betanyc names the server, its version, and where to report a problem
     assert.equal(s.built_by, "BetaNYC, a project of the Fund for the City of New York");
     assert.deepEqual(s.bugs_and_requests, { issues: `${REPO}/issues`, new_issue: `${REPO}/issues/new` });
     assert.equal(s.whats_changed, SOURCE);
+    assertMatchesModuleOutputSchema("about_betanyc", s);
     const bad = await client.callTool({ name: "about_betanyc", arguments: { verbose: true } });
     assert.equal(bad.isError, true);
-    assert.match(textOf(bad), /takes no parameters/);
+    assert.match(textOf(bad), /verbose/);
   } finally {
     await close();
   }
@@ -160,16 +192,9 @@ test("the Checkbook tools still go through McpServer: its zod validation and its
   }
 });
 
-test("withBetanycTools fails at startup when McpServer did not install its tool handlers", () => {
-  const server = new McpServer({ name: "t", version: "0" });
-  assert.throws(() => withBetanycTools(server, () => {}), /did not install its tools\/list and tools\/call handlers/);
-  // The interception is removed afterwards: the instance uses the prototype method again.
-  assert.equal(Object.hasOwn(server.server, "setRequestHandler"), false);
-});
-
-test("over stdio, the SDK client accepts both answers against their output schemas", async () => {
-  // Client.callTool validates structuredContent against the outputSchema from tools/list
-  // and throws when it does not match, so this is the MCP contract checked end to end.
+test("over stdio, the built server answers both tools with structuredContent", async () => {
+  // No outputSchema is registered (src/betanyc.ts), so the client does not validate; the
+  // answers are checked against the module's outputSchema here.
   const transport = new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], stderr: "ignore" });
   const client = new Client({ name: "betanyc-tools-test", version: "0" });
   await client.connect(transport);
@@ -178,8 +203,10 @@ test("over stdio, the SDK client accepts both answers against their output schem
     assert.equal(tools.length, CHECKBOOK_TOOLS + 2);
     const wc = await client.callTool({ name: "whats_changed", arguments: { limit: 3 } });
     assert.equal(wc.structuredContent.returned, 3);
+    assertMatchesModuleOutputSchema("whats_changed", wc.structuredContent);
     const about = await client.callTool({ name: "about_betanyc", arguments: {} });
     assert.equal(about.structuredContent.server.version, pkg.version);
+    assertMatchesModuleOutputSchema("about_betanyc", about.structuredContent);
   } finally {
     await client.close();
   }

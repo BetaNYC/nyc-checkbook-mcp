@@ -15,18 +15,21 @@ reader-facing record of changes. Tracking: BetaNYC/betanyc-ai-workspace#1645 (ep
 ### Added
 
 - `whats_changed`: what changed in this server, newest first, from `WHATS-CHANGED.md`
-  (filters: `since`, `tag`, `limit`). Answers with readable text and `structuredContent`
-  matching a declared `outputSchema`. Reads the file shipped in the package; no network.
+  (filters: `since`, `tag`, `limit`). Answers with readable text and `structuredContent`.
+  Reads the file shipped in the package; no network.
 - `about_betanyc`: who built the server, the repository, where to report a problem, and
   BetaNYC's links.
 - `src/betanyc-tools.ts`, copied unchanged from the workspace's
   `scripts/mcp_shared/betanyc-tools.ts` (v1.1.1). Never edit the copy; change the canonical
-  file and copy it again. Its tools are plain JSON Schema, which `McpServer.registerTool`
-  does not take, so `src/betanyc.ts` (`withBetanycTools`) lets McpServer install its
-  `tools/list` and `tools/call` handlers, then wraps them: the two shared tools are answered
-  by the shared module and every other request goes to McpServer unchanged. It throws at
-  startup if McpServer stops installing those handlers the way SDK 1.29.0 does. The two
-  tools do not answer from Checkbook data, so they do not carry the Comptroller data
+  file and copy it again. Its tools are defined in plain JSON Schema, and
+  `McpServer.registerTool` takes zod, so `src/betanyc.ts` registers both through
+  `registerTool` with zod input schemas equivalent to the module's (same names, types,
+  optional fields, pattern and limits; `tag` any string, accepted in any case) and returns
+  the module's answers unchanged. No `outputSchema` is registered, because that would mean a
+  second, hand-kept zod copy of the module's nested output schema; `structuredContent` is
+  still returned. Argument errors come from zod for format, range and unknown keys (with the
+  module's wording for `since` and `limit`) and from the module for real dates and tags. The
+  two tools do not answer from Checkbook data, so they do not carry the Comptroller data
   disclaimer.
 - `WHATS-CHANGED.md`, backfilled to 1.0.0, shipped in the npm package (`files`). No site:
   GitHub's rendering of the file is the page, linked near the top of the README.
@@ -43,11 +46,13 @@ reader-facing record of changes. Tracking: BetaNYC/betanyc-ai-workspace#1645 (ep
 
 ### Tests
 
-- `test/betanyc-tools.test.mjs`: both tools listed with output schemas and read-only
-  annotations; `whats_changed` answers from this repo's file with every entry valid, and its
-  filters and argument errors; `about_betanyc`; the existing tools still dispatch through
-  the wrapped handler; both answers pass the SDK client's own `outputSchema` validation over
-  stdio; `npm pack --dry-run` lists `WHATS-CHANGED.md`.
+- `test/betanyc-tools.test.mjs`: the advertised input schemas, titles, descriptions and
+  annotations equal the module's, property by property (an `enum` on `tag`, or a changed
+  limit, fails it); `whats_changed` answers from this repo's file with every entry valid, and
+  its filters and argument errors; `about_betanyc`; both answers, in memory and over stdio
+  from the built server, validate against the module's `outputSchema` with the SDK's AJV
+  validator; the Checkbook tools still go through McpServer; `npm pack --dry-run` lists
+  `WHATS-CHANGED.md`.
 
 ## [1.6.4] - 2026-11-09
 

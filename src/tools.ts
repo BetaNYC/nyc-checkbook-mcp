@@ -22,7 +22,7 @@ import {
   type Criteria,
   type DataDomain,
 } from "./checkbook.js";
-import { withBetanycTools } from "./betanyc.js";
+import { registerBetanycTools } from "./betanyc.js";
 
 // ─── Disclaimer ──────────────────────────────────────────────────────────────
 
@@ -619,7 +619,8 @@ export function nychaContractsCriteria(input: NychaContractsInput): Criteria[] {
  * the two tools every BetaNYC MCP server carries (src/betanyc.ts).
  */
 export function registerTools(server: McpServer): void {
-  withBetanycTools(server, registerCheckbookTools);
+  registerCheckbookTools(server);
+  registerBetanycTools(server);
 }
 
 function registerCheckbookTools(server: McpServer): void {
