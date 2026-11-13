@@ -148,7 +148,7 @@ test("whats_changed rejects bad arguments by name, through the server's tools/ca
   }
 });
 
-test("about_betanyc names the server, its version, and where to report a problem", async () => {
+test("about_betanyc names the server, its version, and where to report a bug or ask for a feature", async () => {
   const { client, close } = await connect();
   try {
     const r = await client.callTool({ name: "about_betanyc", arguments: {} });

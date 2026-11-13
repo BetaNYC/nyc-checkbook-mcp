@@ -5,12 +5,12 @@ This page lists the changes to nyc-checkbook-mcp that a reader would notice: new
 - **History begins:** 2026-05-21, the first release. Corrections made before this date may be missing.
 - **Data refresh:** None to list. Every answer asks the Checkbook NYC API, run by the NYC Comptroller's office, at the time of the question.
 
-To report a problem with this server or ask for a feature, [open an issue on GitHub](https://github.com/BetaNYC/nyc-checkbook-mcp/issues).
+To report a bug in this server or ask for a new feature, [open an issue on GitHub](https://github.com/BetaNYC/nyc-checkbook-mcp/issues).
 
 ## Unreleased: Two tools that explain the server, and this page
 
 - **Tags:** MCP
-- **What changed:** This page is new and lists every change to the server that a reader would notice. Two new tools let your AI assistant answer "what's new in this server?" from this page, and "who built this?" with links to BetaNYC and to the place to report a problem with this server.
+- **What changed:** This page is new and lists every change to the server that a reader would notice. Two new tools let your AI assistant answer "what's new in this server?" from this page, and "who built this?" with links to BetaNYC and to the place to report a bug in this server or ask for a new feature.
 - **MCP version:** [nyc-checkbook-mcp 1.7.0](CHANGELOG.md)
 - **More detail:** [Release notes](CHANGELOG.md)
 
