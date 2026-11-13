@@ -12,6 +12,8 @@ Checkbook NYC is the NYC Comptroller's financial transparency platform. It track
 
 Vibe coded with [Claude](https://claude.ai) by [BetaNYC](https://beta.nyc).
 
+**[What's changed](WHATS-CHANGED.md)**: new tools, changes to what the tools return, and corrections, newest first.
+
 ## Contents
 
 * [Getting started](#getting-started)
@@ -48,7 +50,7 @@ Note that the API is rate-limited to **one request per second**. This server enf
 
 ## What it does
 
-Exposes 9 tools over MCP:
+Exposes 11 tools over MCP:
 
 | Tool | Description |
 |---|---|
@@ -61,6 +63,8 @@ Exposes 9 tools over MCP:
 | `get_agency_spending` | All spending for a specific agency in a fiscal year |
 | `search_nycedc_contracts` | NYCEDC / Other Government Entities (OGE) contracts — separate from citywide |
 | `search_nycha_contracts` | NYCHA (Housing Authority) contracts at release/line-item granularity |
+| `whats_changed` | What changed in this server, newest first, from [WHATS-CHANGED.md](WHATS-CHANGED.md) (filter by date or tag) |
+| `about_betanyc` | Who built this server, where to report a problem, and BetaNYC's links |
 
 > **Finding a vendor by name?** The contracts API filters vendors only by `vendor_code` (there is no name lookup). Use `search_spending(payee_name="…")` to find checks paid to a named vendor. Note that many NYC contracts are held by resellers, so a software/product name may not match the contract's own vendor.
 
@@ -469,6 +473,7 @@ Three areas carry tests worth knowing about before you change them:
 - `src/index.ts` starts the server and registers tools
 - `src/checkbook.ts` holds the API client, request pacing, XML construction, and response parsing
 - `src/tools.ts` holds tool definitions, schemas, and criteria mapping
+- `src/betanyc.ts` adds `whats_changed` and `about_betanyc`, the two tools every BetaNYC MCP server carries, from `src/betanyc-tools.ts`. That file and `scripts/whats_changed.py` are copies of shared files in BetaNYC's workspace: never edit them here
 
 ---
 
@@ -524,7 +529,16 @@ npm run check:columns            # must exit 0
 
 If the probe aborts with a 403, that is a rate-limit block: stop, and do not re-run it to check. If the checker reports `UNVERIFIED`, follow [scripts/README.md](scripts/README.md#checking-the-default-response-columns-pre-release). `probe-results.txt` is git-ignored.
 
-Publishing is automated. Pushing a tag of the form `v<version>` (matching `package.json`) runs `.github/workflows/release.yml`, which tests, publishes to npm with provenance, and creates a GitHub Release with generated notes. Requires the `NPM_TOKEN` repository secret. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
+Publishing is automated. Pushing a tag of the form `v<version>` (matching `package.json`) runs `.github/workflows/release.yml`, which tests, publishes to npm with provenance, and creates a GitHub Release with generated notes. Requires the `NPM_TOKEN` repository secret. Changes are tracked in [CHANGELOG.md](CHANGELOG.md) for developers and in [WHATS-CHANGED.md](WHATS-CHANGED.md) for everyone else.
+
+**Release day.** A version bump merges with its `WHATS-CHANGED.md` entry headed `## Unreleased: Title` and its `CHANGELOG.md` heading undated (`## [X.Y.Z] - Unreleased`), the entry's MCP version linking to `CHANGELOG.md` with no anchor. On the day the tag goes on, make one commit that:
+
+1. changes `## Unreleased: Title` to `## YYYY-MM-DD: Title` (same title, today's date in New York; `check` rejects a future date);
+2. gives the `CHANGELOG.md` heading the same date (`## [X.Y.Z] - YYYY-MM-DD`);
+3. adds the dated anchor to the MCP version link, computed with the script, never by hand: `python3 -c "import sys; sys.path.insert(0,'scripts'); import whats_changed as w; print(w.github_slug('[X.Y.Z] - YYYY-MM-DD'))"`;
+4. runs `python3 scripts/whats_changed.py check WHATS-CHANGED.md --release`.
+
+Then tag that commit `vX.Y.Z` and push the tag. The Release workflow runs the same `check --release` before `npm publish` and stops while an Unreleased entry is left. A release that changes nothing a reader would notice (metadata only) gets no entry; its commit carries a `No-whats-changed: <reason>` trailer instead.
 
 ---
 
