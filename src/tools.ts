@@ -616,7 +616,7 @@ export function nychaContractsCriteria(input: NychaContractsInput): Criteria[] {
 
 /**
  * Register every tool: this server's Checkbook tools, then whats_changed and about_betanyc,
- * the two tools every BetaNYC MCP server carries (src/betanyc.ts).
+ * the two tools BetaNYC is adding to each of its MCP servers (src/betanyc.ts).
  */
 export function registerTools(server: McpServer): void {
   registerCheckbookTools(server);

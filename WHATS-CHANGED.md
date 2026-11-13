@@ -31,7 +31,7 @@ To report a problem with this server or ask for a feature, [open an issue on Git
 ## 2026-08-01: Asking for subcontractors no longer breaks contract searches
 
 - **Tags:** MCP
-- **What changed:** From July 16 to August 1, 2026, a search of registered contracts that asked to include subcontractors failed every time, because it asked the Checkbook NYC API for a column the API rejects. Version 1.6.1 drops that column and adds three that were missing: subcontract start date, end date and reference ID. CHANGELOG.md dates this release July 31; it reached npm just after midnight on August 1.
+- **What changed:** From July 16 to August 1, 2026, a search of registered contracts that asked to include subcontractors failed every time, because it asked the Checkbook NYC API for a column the API rejects. Version 1.6.1 drops that column and adds three that were missing: subcontract start date, end date and reference ID. Before July 29 this showed as zero records; see [the correction of July 29](#2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records). CHANGELOG.md dates this release July 31; it reached npm just after midnight on August 1.
 - **MCP version:** [nyc-checkbook-mcp 1.6.1](CHANGELOG.md#161---2026-07-31)
 - **More detail:** [The fix](https://github.com/BetaNYC/nyc-checkbook-mcp/pull/33) · [Subcontractor fields issue](https://github.com/BetaNYC/nyc-checkbook-mcp/issues/8)
 
@@ -62,7 +62,7 @@ To report a problem with this server or ask for a feature, [open an issue on Git
 ## 2026-07-16: NYCHA and NYCEDC contracts, subcontractors, and contract searches that work
 
 - **Tags:** MCP
-- **What changed:** From May 21 to July 16, 2026, searches of registered contracts and contract lookups failed, because they asked the Checkbook NYC API for a column it rejects; version 1.3.1 fixes them, and a search by vendor name now explains that the contracts API cannot search by name and suggests other ways. Two new tools search the contracts of NYCHA, the Housing Authority, and of NYCEDC and other government entities, and contract results gained columns such as whether a vendor is a women-owned or emerging business, plus an option to include subcontractors (it did not work until August 1). These changes were written as versions 1.2.0 and 1.3.0, but neither was published on its own; they first reached npm in 1.3.1.
+- **What changed:** From May 21 to July 16, 2026, searches of registered contracts and contract lookups failed, because they asked the Checkbook NYC API for a column it rejects; version 1.3.1 fixes them, and a search by vendor name now explains that the contracts API cannot search by name and suggests other ways. Before July 29 this showed as zero records; see [the correction of July 29](#2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records). Two new tools search the contracts of NYCHA, the Housing Authority, and of NYCEDC and other government entities, and contract results gained columns such as whether a vendor is a women-owned or emerging business, plus an option to include subcontractors (it did not work until August 1). These changes were written as versions 1.2.0 and 1.3.0, but neither was published on its own; they first reached npm in 1.3.1.
 - **MCP version:** [nyc-checkbook-mcp 1.3.1](CHANGELOG.md#131---2026-07-16)
 - **More detail:** [The contract search fix](https://github.com/BetaNYC/nyc-checkbook-mcp/pull/17) · [NYCHA and NYCEDC tools](https://github.com/BetaNYC/nyc-checkbook-mcp/pull/13) · [Release notes for 1.2.0](CHANGELOG.md#120---2026-07-09) · [Release notes for 1.3.0](CHANGELOG.md#130---2026-07-09)
 
@@ -77,7 +77,7 @@ To report a problem with this server or ask for a feature, [open an issue on Git
 ## 2026-07-06: Payroll, budget and revenue searches rebuilt to match the API
 
 - **Tags:** MCP
-- **What changed:** The payroll, budget and revenue searches sent search terms the Checkbook NYC API does not accept, and payroll and revenue searches failed as a result; version 1.1.0 rebuilds all three from the API's own list of accepted terms. Payroll searches now need a fiscal or calendar year, and there is no search by employee name, because the API has none. Smart search, which the Checkbook NYC website blocks for programs like this one, now says it is unavailable and suggests other tools.
+- **What changed:** The payroll, budget and revenue searches each sent a search term the Checkbook NYC API does not accept (budget searches sent a fiscal year term the budget data does not have), and payroll and revenue searches failed as a result; version 1.1.0 rebuilds all three from the API's own list of accepted terms. Before July 29 this showed as zero records; see [the correction of July 29](#2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records). Payroll searches now need a fiscal or calendar year, and there is no search by employee name, because the API has none. Smart search, which the Checkbook NYC website blocks for programs like this one, now says it is unavailable and suggests other tools.
 - **MCP version:** [nyc-checkbook-mcp 1.1.0](CHANGELOG.md#110---2026-07-06)
 - **More detail:** [The fix](https://github.com/BetaNYC/nyc-checkbook-mcp/pull/4)
 

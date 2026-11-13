@@ -1,5 +1,5 @@
 /**
- * whats_changed and about_betanyc, the two tools every BetaNYC MCP server carries
+ * whats_changed and about_betanyc, the two tools BetaNYC is adding to each of its MCP servers
  * (betanyc-ai-workspace platform/system/whats-changed-standard.md § 7).
  *
  * betanyc-tools.ts is a copy of the workspace's canonical file: never edit it here. It defines
@@ -41,8 +41,8 @@ function moduleProperty(name: string): { description: string; pattern?: string }
   return props[name];
 }
 
-// The messages are the module's own, so an argument error reads the same here as on every
-// other BetaNYC server. zod checks the format; the module still checks that a date is real.
+// The messages are the module's own, so an argument error reads the same here as on the
+// other BetaNYC servers that have these tools. zod checks the format; the module still checks that a date is real.
 const SINCE_MESSAGE = "since must be a real date written YYYY-MM-DD, for example 2026-11-01.";
 const LIMIT_MESSAGE = `limit must be a whole number from 1 to ${MAX_LIMIT}.`;
 

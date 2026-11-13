@@ -473,7 +473,7 @@ Three areas carry tests worth knowing about before you change them:
 - `src/index.ts` starts the server and registers tools
 - `src/checkbook.ts` holds the API client, request pacing, XML construction, and response parsing
 - `src/tools.ts` holds tool definitions, schemas, and criteria mapping
-- `src/betanyc.ts` adds `whats_changed` and `about_betanyc`, the two tools every BetaNYC MCP server carries, from `src/betanyc-tools.ts`. That file and `scripts/whats_changed.py` are copies of shared files in BetaNYC's workspace: never edit them here
+- `src/betanyc.ts` adds `whats_changed` and `about_betanyc`, the two tools BetaNYC is adding to each of its MCP servers, from `src/betanyc-tools.ts`. That file and `scripts/whats_changed.py` are copies of shared files in BetaNYC's workspace: never edit them here
 
 ---
 
