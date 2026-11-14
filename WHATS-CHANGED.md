@@ -54,7 +54,7 @@ To report a bug in this server or ask for a new feature, [open an issue on GitHu
 ## 2026-07-21: Tools ignored settings they did not have, without saying so
 
 - **Tags:** MCP, Correction
-- **What changed:** From May 21 to July 21, 2026, when an AI assistant passed a setting a tool does not have, the tool dropped it without saying so and answered a different question. On July 21, a contract search with "vendor" set to Community League of the Heights returned 5,755,099 unrelated contract records, because the setting is called vendor name. Version 1.4.0, which reached npm on July 21 although CHANGELOG.md calls it unreleased, refuses the call and names the settings the tool does accept.
+- **What changed:** From May 21 to July 21, 2026, when an AI assistant passed a setting a tool does not have, the tool dropped it without saying so and answered a different question. On July 21, a contract search with "vendor" set to the name of one organization returned 5,755,099 unrelated contract records, because the setting is called vendor name. Version 1.4.0, which reached npm on July 21 although CHANGELOG.md calls it unreleased, refuses the call and names the settings the tool does accept.
 - **If you used the old numbers:** If an answer from that period looked broader than your question, for example citywide when you asked about one vendor, ask it again with the current version. It now refuses a setting it does not know instead of ignoring it.
 - **MCP version:** [nyc-checkbook-mcp 1.4.0](CHANGELOG.md)
 - **More detail:** [The issue](https://github.com/BetaNYC/nyc-checkbook-mcp/issues/19) · [The fix](https://github.com/BetaNYC/nyc-checkbook-mcp/pull/20)
