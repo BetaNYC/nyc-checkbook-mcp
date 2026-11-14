@@ -7,11 +7,11 @@ This page lists the changes to nyc-checkbook-mcp that a reader would notice: new
 
 To report a bug in this server or ask for a new feature, [open an issue on GitHub](https://github.com/BetaNYC/nyc-checkbook-mcp/issues).
 
-## Unreleased: Two tools that explain the server, and this page
+## 2026-11-13: Two tools that explain the server, and this page
 
 - **Tags:** MCP
 - **What changed:** This page is new and lists every change to the server that a reader would notice. Two new tools let your AI assistant answer "what's new in this server?" from this page, and "who built this?" with links to BetaNYC and to the place to report a bug in this server or ask for a new feature.
-- **MCP version:** [nyc-checkbook-mcp 1.7.0](CHANGELOG.md)
+- **MCP version:** [nyc-checkbook-mcp 1.7.0](CHANGELOG.md#170---2026-11-13)
 - **More detail:** [Release notes](CHANGELOG.md)
 
 ## 2026-10-17: Version 1.6.3 fixes searches of NYCHA, NYCEDC and revenue contracts

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.7.0] - Unreleased
+## [1.7.0] - 2026-11-13
 
 Adds `whats_changed` and `about_betanyc`, the two tools BetaNYC is adding to each of its MCP
 servers, and `WHATS-CHANGED.md`, the reader-facing record of changes. Tracking: BetaNYC/betanyc-ai-workspace#1645 (epic #1637).
