@@ -20,7 +20,7 @@
  * `files`), one level above dist/. The tools read them locally and never touch the network.
  * Every Checkbook source is fetched live, so no freshness hook is needed. smart_search is off
  * unless CHECKBOOK_ENABLE_SMART_SEARCH is set (#25); when it is off, about_data says its
- * source is not available on this server instead of "fetched when you ask" (module 1.3.6,
+ * source is not available on this server instead of "fetched when you ask" (added in module 1.3.6,
  * unavailableSources).
  */
 import { z } from "zod";

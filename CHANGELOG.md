@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.8.0] - unreleased
 
 Adds `about_data`, the third tool BetaNYC adds to each of its MCP servers, and
-`DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.3.6.
+`DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.3.7.
 Part of BetaNYC/betanyc-ai-workspace#1655 (epic #1652).
 
 ### Added
@@ -39,8 +39,8 @@ Part of BetaNYC/betanyc-ai-workspace#1655 (epic #1652).
 
 ### Changed
 
-- `src/betanyc-tools.ts` is the workspace's shared module 1.3.6 (was 1.2.4) and
-  `scripts/whats_changed.py` is 1.3.5, both copied in unchanged. Never edit the copies.
+- `src/betanyc-tools.ts` is the workspace's shared module 1.3.7 (was 1.2.4) and
+  `scripts/whats_changed.py` is 1.3.7, both copied in unchanged. Never edit the copies.
 - `src/betanyc.ts` registers the three shared tools from the module's factory output, so
   `about_data`'s description lists this server's topics. When `smart_search` is off (the
   default), the factory gets `unavailableSources` for its source, so `about_data` says that
@@ -58,7 +58,7 @@ Part of BetaNYC/betanyc-ai-workspace#1655 (epic #1652).
   (`assertEveryToolExplained`, which also fails on an unknown tool); the eight topics; every
   API source is the Comptroller's, live, with `figures_official` true; a tool name as the
   topic; the smart search source is unavailable when off and live when on; a bad topic and
-  an unknown key; the server instructions; module 1.3.6.
+  an unknown key; the server instructions; module 1.3.7.
 - `test/betanyc-tools.test.mjs`: the three shared tools' input schemas, titles, descriptions
   and annotations equal the factory's, field by field; `about_data` over stdio answers with
   lab@beta.nyc and matches the module's `outputSchema`; `npm pack --dry-run` lists
