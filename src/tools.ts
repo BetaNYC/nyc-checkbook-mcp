@@ -22,6 +22,7 @@ import {
   type Criteria,
   type DataDomain,
 } from "./checkbook.js";
+import { registerBetanycTools } from "./betanyc.js";
 
 // ─── Disclaimer ──────────────────────────────────────────────────────────────
 
@@ -613,7 +614,16 @@ export function nychaContractsCriteria(input: NychaContractsInput): Criteria[] {
 
 // ─── Tool registration ───────────────────────────────────────────────────────
 
+/**
+ * Register every tool: this server's Checkbook tools, then whats_changed and about_betanyc,
+ * the two tools BetaNYC is adding to each of its MCP servers (src/betanyc.ts).
+ */
 export function registerTools(server: McpServer): void {
+  registerCheckbookTools(server);
+  registerBetanycTools(server);
+}
+
+function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "smart_search",
     {

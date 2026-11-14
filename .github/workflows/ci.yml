@@ -44,6 +44,9 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/**"
+      - "WHATS-CHANGED.md"
+      - "CHANGELOG.md"
+      - "scripts/whats_changed.py"
   push:
     branches: [main]
     paths:
@@ -52,6 +55,9 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/**"
+      - "WHATS-CHANGED.md"
+      - "CHANGELOG.md"
+      - "scripts/whats_changed.py"
   # Manual trigger — lets us fire a run on any branch. Needed because a
   # path-scoped pull_request/push event does not fire on the very PR that
   # introduces the workflow, so this gate never executed on its own PR (#2).
@@ -90,3 +96,26 @@ jobs:
 
       - name: Build and test
         run: npm test
+
+  # The What's changed standard (betanyc-ai-workspace
+  # platform/system/whats-changed-standard.md § 10). scripts/whats_changed.py is a copy of the
+  # workspace's canonical file: never edit it here. `check --base-ref` needs the base branch's
+  # history (fetch-depth: 0): old entries are append-only, and a package.json version bump
+  # needs an MCP entry naming the new version. This repo has no site, so there is no page to
+  # rebuild: GitHub's rendering of WHATS-CHANGED.md is the page. Stdlib only, so no pip install.
+  whats-changed:
+    name: What's changed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check WHATS-CHANGED.md
+        run: python3 scripts/whats_changed.py check WHATS-CHANGED.md --base-ref "origin/${{ github.base_ref || 'main' }}"
