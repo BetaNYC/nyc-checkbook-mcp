@@ -62,9 +62,10 @@ const EXPECTED_TOOLS = [
   "get_agency_spending",
   "search_nycedc_contracts",
   "search_nycha_contracts",
-  // The two tools BetaNYC is adding to each of its MCP servers (src/betanyc.ts).
+  // The three tools BetaNYC adds to each of its MCP servers (src/betanyc.ts).
   "whats_changed",
   "about_betanyc",
+  "about_data",
 ];
 
 test("tools/list exposes the expected tool names", async () => {
