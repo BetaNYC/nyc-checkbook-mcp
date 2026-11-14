@@ -14,6 +14,8 @@ Vibe coded with [Claude](https://claude.ai) by [BetaNYC](https://beta.nyc).
 
 **[What's changed](WHATS-CHANGED.md)**: new tools, changes to what the tools return, and corrections, newest first.
 
+**[Where the data comes from](DATA-SOURCES.json)**: each kind of data, its publisher, how current it is, its terms, and where to report an error. Also published as a DCAT-US 3.0 catalog, [data.json](data.json).
+
 ## Contents
 
 * [Getting started](#getting-started)
@@ -50,7 +52,7 @@ Note that the API is rate-limited to **one request per second**. This server enf
 
 ## What it does
 
-Exposes 11 tools over MCP:
+Exposes 12 tools over MCP:
 
 | Tool | Description |
 |---|---|
@@ -65,6 +67,7 @@ Exposes 11 tools over MCP:
 | `search_nycha_contracts` | NYCHA (Housing Authority) contracts at release/line-item granularity |
 | `whats_changed` | What changed in this server, newest first, from [WHATS-CHANGED.md](WHATS-CHANGED.md) (filter by date or tag) |
 | `about_betanyc` | Who built this server, where to report a bug in this server or ask for a new feature, and BetaNYC's links |
+| `about_data` | Where each kind of data comes from, from [DATA-SOURCES.json](DATA-SOURCES.json): the publisher, whether it is an official record, how current it is, terms and credit line, where to check a figure and where to report an error (filter by topic or tool name) |
 
 > **Finding a vendor by name?** The contracts API filters vendors only by `vendor_code` (there is no name lookup). Use `search_spending(payee_name="…")` to find checks paid to a named vendor. Note that many NYC contracts are held by resellers, so a software/product name may not match the contract's own vendor.
 
@@ -473,7 +476,8 @@ Three areas carry tests worth knowing about before you change them:
 - `src/index.ts` starts the server and registers tools
 - `src/checkbook.ts` holds the API client, request pacing, XML construction, and response parsing
 - `src/tools.ts` holds tool definitions, schemas, and criteria mapping
-- `src/betanyc.ts` adds `whats_changed` and `about_betanyc`, the two tools BetaNYC is adding to each of its MCP servers, from `src/betanyc-tools.ts`. That file and `scripts/whats_changed.py` are copies of shared files in BetaNYC's workspace: never edit them here
+- `src/betanyc.ts` adds `whats_changed`, `about_betanyc` and `about_data`, the three tools BetaNYC adds to each of its MCP servers, from `src/betanyc-tools.ts`. That file, `scripts/whats_changed.py`, `scripts/tests/catalog_validate.py` and `scripts/mcp_shared/` are copies of shared files in BetaNYC's workspace: never edit them here
+- `DATA-SOURCES.json` says where each kind of data comes from; `about_data` answers from it. `data.json` is generated from it with `python3 scripts/whats_changed.py about-data catalog DATA-SOURCES.json`: never edit it by hand
 
 ---
 

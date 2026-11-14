@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - unreleased
+
+Adds `about_data`, the third tool BetaNYC adds to each of its MCP servers, and
+`DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.3.6.
+Part of BetaNYC/betanyc-ai-workspace#1655 (epic #1652).
+
+### Added
+
+- `about_data`: where each kind of data comes from (publisher, link, official or not, how it
+  is gathered, what BetaNYC changes, how current it is, coverage and gaps, terms and credit
+  line, where to check a figure and where to report an error, which tools use it), and
+  BetaNYC's contact address for data questions, lab@beta.nyc. `topic` takes a source id or a
+  tool name, in any case. Reads the file shipped in the package; no network.
+- `DATA-SOURCES.json`: eight sources, one per Checkbook NYC API data domain the server reads
+  (spending, contracts, budget, payroll, revenue, NYCEDC and NYCHA contracts) plus the
+  Checkbook NYC website search behind `smart_search`. Facts come from checkbooknyc.com, the
+  Comptroller's website disclaimer, the `NYCComptroller/Checkbook` README and this repo's
+  own code and README. The API sources are official records whose values pass through
+  unchanged (`reshaped`, `fields-removed`: XML to JSON, and each tool asks for a set list of
+  fields). The publisher states no update schedule and no license, so `update_frequency` is
+  `unknown` and the license reads "None stated by the publisher".
+- `data.json`, the DCAT-US 3.0 catalog generated from `DATA-SOURCES.json` with
+  `whats_changed.py about-data catalog` (never edited by hand). No `croissant.json`: the
+  server publishes no data files of its own.
+- Server instructions: the shared module's `BETANYC_INSTRUCTIONS` (call `about_data` for
+  questions about sources, freshness and accuracy), after one sentence on what the server
+  covers.
+- The validator kit, copied unchanged from the workspace: `scripts/tests/catalog_validate.py`,
+  `scripts/mcp_shared/data-sources.schema.json` and `scripts/mcp_shared/vendor/dcat-us-3.0.0/`.
+
+### Changed
+
+- `src/betanyc-tools.ts` is the workspace's shared module 1.3.6 (was 1.2.4) and
+  `scripts/whats_changed.py` is 1.3.5, both copied in unchanged. Never edit the copies.
+- `src/betanyc.ts` registers the three shared tools from the module's factory output, so
+  `about_data`'s description lists this server's topics. When `smart_search` is off (the
+  default), the factory gets `unavailableSources` for its source, so `about_data` says that
+  source is not available on this server instead of "fetched when you ask".
+- The server registers 13 tools instead of 12. The README lists 12 instead of 11.
+- `package.json` `files` adds `DATA-SOURCES.json` and `data.json`.
+- CI: a new `about-data` job (the tool list from the built server, `about-data check
+  --tools-file`, `about-data catalog --check`, and the JSON Schema and DCAT-US 3.0 validators
+  with pinned `jsonschema` 4.26.0, `referencing` 0.37.0 and `rfc3987` 1.3.8). The release
+  workflow runs `about-data check --release` before `npm publish`.
+
+### Tests
+
+- `test/about-data.test.mjs`: every tool the server lists has a source
+  (`assertEveryToolExplained`, which also fails on an unknown tool); the eight topics; every
+  API source is the Comptroller's, live, with `figures_official` true; a tool name as the
+  topic; the smart search source is unavailable when off and live when on; a bad topic and
+  an unknown key; the server instructions; module 1.3.6.
+- `test/betanyc-tools.test.mjs`: the three shared tools' input schemas, titles, descriptions
+  and annotations equal the factory's, field by field; `about_data` over stdio answers with
+  lab@beta.nyc and matches the module's `outputSchema`; `npm pack --dry-run` lists
+  `DATA-SOURCES.json` and `data.json`.
+- `test/tools.test.mjs`: `about_data` in the expected tool names.
+
 ## [1.7.0] - 2026-11-13
 
 Adds `whats_changed` and `about_betanyc`, the two tools BetaNYC is adding to each of its MCP

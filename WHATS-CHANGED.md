@@ -7,6 +7,13 @@ This page lists the changes to nyc-checkbook-mcp that a reader would notice: new
 
 To report a bug in this server or ask for a new feature, [open an issue on GitHub](https://github.com/BetaNYC/nyc-checkbook-mcp/issues).
 
+## Unreleased: Ask the server where its data comes from
+
+- **Tags:** MCP
+- **What changed:** A new tool answers "where does this number come from?", "is this official?", "how current is it?" and "how do I check it?". For each kind of data (spending, contracts, budget, payroll, revenue, and NYCEDC and NYCHA contracts) it names the source, Checkbook NYC, and its publisher, the NYC Comptroller's office. It says that the figures are the Comptroller's records with no value changed, that every answer asks Checkbook NYC at the time of the question, where to check a figure on checkbooknyc.com, and where to report an error in the data. It also gives BetaNYC's email address for questions about the data, lab@beta.nyc. The same list of sources is published as a data catalog.
+- **MCP version:** [nyc-checkbook-mcp 1.8.0](CHANGELOG.md)
+- **More detail:** [Where the data comes from](DATA-SOURCES.json) · [Data catalog](data.json) · [Release notes](CHANGELOG.md)
+
 ## 2026-11-13: Two tools that explain the server, and this page
 
 - **Tags:** MCP
