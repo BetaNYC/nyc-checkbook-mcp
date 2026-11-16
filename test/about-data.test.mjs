@@ -2,7 +2,7 @@
 // platform/system/about-data-standard.md). The answer comes from DATA-SOURCES.json through
 // BetaNYC's shared module (src/betanyc-tools.ts, a copy: never edit it here). These tests keep
 // three promises: every tool has a documented source, so a new tool cannot ship unexplained;
-// every Checkbook source is the Comptroller's record, passed on with its values unchanged; and
+// every Checkbook source is the Comptroller's record, modified by BetaNYC (shared module 1.4.0); and
 // smart_search's source never reads as "fetched when you ask" while the tool is off.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -42,8 +42,8 @@ async function listedToolNames() {
 const ask = (args, smartSearch = false) => betanycTools({ smartSearch }).call("about_data", args);
 const one = (r, topic) => r.structuredContent.sources.find((s) => s.topic === topic);
 
-test("shared module 1.3.7", () => {
-  assert.equal(SHARED_MODULE_VERSION, "1.3.7");
+test("shared module 1.4.0", () => {
+  assert.equal(SHARED_MODULE_VERSION, "1.4.0");
 });
 
 test("every tool says where its data comes from, so a new tool cannot ship unexplained", async () => {
@@ -66,11 +66,12 @@ test("every source names its source, publisher, link and whether it is official"
   assert.match(r.content[0].text, /Questions or error reports about this data, to BetaNYC: lab@beta\.nyc/);
 });
 
-test("the API sources: the Comptroller's record, fetched live, values unchanged", () => {
+test("the API sources: the Comptroller's record, fetched live, modified by BetaNYC (shared module 1.4.0)", () => {
   for (const topic of API_TOPICS) {
     const s = one(ask({ topic }), topic);
     assert.equal(s.as_of_status, "live", topic);
-    assert.equal(s.figures_official, true, `${topic}: XML to JSON and a set list of fields change no value`);
+    // XML to JSON and a set list of fields: from 1.4.0 any step means BetaNYC modified the data.
+    assert.equal(s.figures_official, false, topic);
     assert.equal(s.source_url, "https://www.checkbooknyc.com/data-feeds/api", topic);
     assert.equal(s.report_errors.in_the_data, "https://groups.google.com/group/checkbooknyc", topic);
   }

@@ -92,7 +92,7 @@
       "identifier": "https://github.com/BetaNYC/nyc-checkbook-mcp/blob/HEAD/DATA-SOURCES.json#spending",
       "contactPoint": {
         "@type": "Kind",
-        "fn": "BetaNYC (serves this dataset; report errors in the data to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc; errors in this server: https://github.com/BetaNYC/nyc-checkbook-mcp/issues)",
+        "fn": "BetaNYC (serves this dataset; report errors in the data to BetaNYC: https://github.com/BetaNYC/nyc-checkbook-mcp/issues; errors in the original records to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc)",
         "hasEmail": "mailto:lab@beta.nyc"
       },
       "publisher": {
@@ -143,9 +143,9 @@
         }
       ],
       "provenance": [
-        "Official record: yes, reshaped by BetaNYC with some fields left out (values unchanged).",
+        "BetaNYC modified this data: reshaped it and left some fields out. This copy should not be considered the official record. Official record: Checkbook NYC API (Office of the New York City Comptroller), https://www.checkbooknyc.com/data-feeds/api",
         "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Spending) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
-        "Reshaped by BetaNYC, some fields left out (values unchanged): The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "Modified by BetaNYC: The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       ],
       "page": [
         {
@@ -189,7 +189,7 @@
       "identifier": "https://github.com/BetaNYC/nyc-checkbook-mcp/blob/HEAD/DATA-SOURCES.json#contracts",
       "contactPoint": {
         "@type": "Kind",
-        "fn": "BetaNYC (serves this dataset; report errors in the data to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc; errors in this server: https://github.com/BetaNYC/nyc-checkbook-mcp/issues)",
+        "fn": "BetaNYC (serves this dataset; report errors in the data to BetaNYC: https://github.com/BetaNYC/nyc-checkbook-mcp/issues; errors in the original records to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc)",
         "hasEmail": "mailto:lab@beta.nyc"
       },
       "publisher": {
@@ -240,9 +240,9 @@
         }
       ],
       "provenance": [
-        "Official record: yes, reshaped by BetaNYC with some fields left out (values unchanged).",
+        "BetaNYC modified this data: reshaped it and left some fields out. This copy should not be considered the official record. Official record: Checkbook NYC API (Office of the New York City Comptroller), https://www.checkbooknyc.com/data-feeds/api",
         "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Contracts) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
-        "Reshaped by BetaNYC, some fields left out (values unchanged): The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "Modified by BetaNYC: The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       ],
       "page": [
         {
@@ -286,7 +286,7 @@
       "identifier": "https://github.com/BetaNYC/nyc-checkbook-mcp/blob/HEAD/DATA-SOURCES.json#budget",
       "contactPoint": {
         "@type": "Kind",
-        "fn": "BetaNYC (serves this dataset; report errors in the data to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc; errors in this server: https://github.com/BetaNYC/nyc-checkbook-mcp/issues)",
+        "fn": "BetaNYC (serves this dataset; report errors in the data to BetaNYC: https://github.com/BetaNYC/nyc-checkbook-mcp/issues; errors in the original records to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc)",
         "hasEmail": "mailto:lab@beta.nyc"
       },
       "publisher": {
@@ -337,9 +337,9 @@
         }
       ],
       "provenance": [
-        "Official record: yes, reshaped by BetaNYC with some fields left out (values unchanged).",
+        "BetaNYC modified this data: reshaped it and left some fields out. This copy should not be considered the official record. Official record: Checkbook NYC API (Office of the New York City Comptroller), https://www.checkbooknyc.com/data-feeds/api",
         "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Budget) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
-        "Reshaped by BetaNYC, some fields left out (values unchanged): The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "Modified by BetaNYC: The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       ],
       "page": [
         {
@@ -383,7 +383,7 @@
       "identifier": "https://github.com/BetaNYC/nyc-checkbook-mcp/blob/HEAD/DATA-SOURCES.json#payroll",
       "contactPoint": {
         "@type": "Kind",
-        "fn": "BetaNYC (serves this dataset; report errors in the data to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc; errors in this server: https://github.com/BetaNYC/nyc-checkbook-mcp/issues)",
+        "fn": "BetaNYC (serves this dataset; report errors in the data to BetaNYC: https://github.com/BetaNYC/nyc-checkbook-mcp/issues; errors in the original records to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc)",
         "hasEmail": "mailto:lab@beta.nyc"
       },
       "publisher": {
@@ -434,9 +434,9 @@
         }
       ],
       "provenance": [
-        "Official record: yes, reshaped by BetaNYC with some fields left out (values unchanged).",
+        "BetaNYC modified this data: reshaped it and left some fields out. This copy should not be considered the official record. Official record: Checkbook NYC API (Office of the New York City Comptroller), https://www.checkbooknyc.com/data-feeds/api",
         "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Payroll) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
-        "Reshaped by BetaNYC, some fields left out (values unchanged): The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "Modified by BetaNYC: The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       ],
       "page": [
         {
@@ -480,7 +480,7 @@
       "identifier": "https://github.com/BetaNYC/nyc-checkbook-mcp/blob/HEAD/DATA-SOURCES.json#revenue",
       "contactPoint": {
         "@type": "Kind",
-        "fn": "BetaNYC (serves this dataset; report errors in the data to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc; errors in this server: https://github.com/BetaNYC/nyc-checkbook-mcp/issues)",
+        "fn": "BetaNYC (serves this dataset; report errors in the data to BetaNYC: https://github.com/BetaNYC/nyc-checkbook-mcp/issues; errors in the original records to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc)",
         "hasEmail": "mailto:lab@beta.nyc"
       },
       "publisher": {
@@ -531,9 +531,9 @@
         }
       ],
       "provenance": [
-        "Official record: yes, reshaped by BetaNYC with some fields left out (values unchanged).",
+        "BetaNYC modified this data: reshaped it and left some fields out. This copy should not be considered the official record. Official record: Checkbook NYC API (Office of the New York City Comptroller), https://www.checkbooknyc.com/data-feeds/api",
         "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Revenue) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
-        "Reshaped by BetaNYC, some fields left out (values unchanged): The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "Modified by BetaNYC: The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       ],
       "page": [
         {
@@ -577,7 +577,7 @@
       "identifier": "https://github.com/BetaNYC/nyc-checkbook-mcp/blob/HEAD/DATA-SOURCES.json#nycedc-contracts",
       "contactPoint": {
         "@type": "Kind",
-        "fn": "BetaNYC (serves this dataset; report errors in the data to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc; errors in this server: https://github.com/BetaNYC/nyc-checkbook-mcp/issues)",
+        "fn": "BetaNYC (serves this dataset; report errors in the data to BetaNYC: https://github.com/BetaNYC/nyc-checkbook-mcp/issues; errors in the original records to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc)",
         "hasEmail": "mailto:lab@beta.nyc"
       },
       "publisher": {
@@ -628,9 +628,9 @@
         }
       ],
       "provenance": [
-        "Official record: yes, reshaped by BetaNYC with some fields left out (values unchanged).",
+        "BetaNYC modified this data: reshaped it and left some fields out. This copy should not be considered the official record. Official record: Checkbook NYC API (Office of the New York City Comptroller), https://www.checkbooknyc.com/data-feeds/api",
         "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Contracts_OGE) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
-        "Reshaped by BetaNYC, some fields left out (values unchanged): The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "Modified by BetaNYC: The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       ],
       "page": [
         {
@@ -673,7 +673,7 @@
       "identifier": "https://github.com/BetaNYC/nyc-checkbook-mcp/blob/HEAD/DATA-SOURCES.json#nycha-contracts",
       "contactPoint": {
         "@type": "Kind",
-        "fn": "BetaNYC (serves this dataset; report errors in the data to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc; errors in this server: https://github.com/BetaNYC/nyc-checkbook-mcp/issues)",
+        "fn": "BetaNYC (serves this dataset; report errors in the data to BetaNYC: https://github.com/BetaNYC/nyc-checkbook-mcp/issues; errors in the original records to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc)",
         "hasEmail": "mailto:lab@beta.nyc"
       },
       "publisher": {
@@ -724,9 +724,9 @@
         }
       ],
       "provenance": [
-        "Official record: yes, reshaped by BetaNYC with some fields left out (values unchanged).",
+        "BetaNYC modified this data: reshaped it and left some fields out. This copy should not be considered the official record. Official record: Checkbook NYC API (Office of the New York City Comptroller), https://www.checkbooknyc.com/data-feeds/api",
         "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Contracts_NYCHA) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
-        "Reshaped by BetaNYC, some fields left out (values unchanged): The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "Modified by BetaNYC: The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       ],
       "page": [
         {
@@ -769,7 +769,7 @@
       "identifier": "https://github.com/BetaNYC/nyc-checkbook-mcp/blob/HEAD/DATA-SOURCES.json#smart-search",
       "contactPoint": {
         "@type": "Kind",
-        "fn": "BetaNYC (serves this dataset; report errors in the data to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc; errors in this server: https://github.com/BetaNYC/nyc-checkbook-mcp/issues)",
+        "fn": "BetaNYC (serves this dataset; report errors in the data to BetaNYC: https://github.com/BetaNYC/nyc-checkbook-mcp/issues; errors in the original records to Office of the New York City Comptroller: https://groups.google.com/group/checkbooknyc)",
         "hasEmail": "mailto:lab@beta.nyc"
       },
       "publisher": {
@@ -820,9 +820,9 @@
         }
       ],
       "provenance": [
-        "Official record: yes, reshaped by BetaNYC (values unchanged).",
+        "BetaNYC modified this data: reshaped it. This copy should not be considered the official record. Official record: Checkbook NYC (Office of the New York City Comptroller), https://www.checkbooknyc.com/",
         "Off unless the server is started with CHECKBOOK_ENABLE_SMART_SEARCH=1. Then the tool reads the site's search page (https://www.checkbooknyc.com/smart_search/citywide) at the moment you ask. The Comptroller's office confirmed this page is not part of the supported API, and the site usually blocks programs like this one, so the tool usually answers that it is unavailable.",
-        "Reshaped by BetaNYC (values unchanged): When the page does return results, the server picks each result's fields out of the page text, with their values unchanged."
+        "Modified by BetaNYC: When the page does return results, the server picks each result's fields out of the page text, with their values unchanged."
       ],
       "page": [
         {
