@@ -1,0 +1,482 @@
+{
+  "format": "betanyc-data-sources/1",
+  "server": {
+    "name": "nyc-checkbook-mcp",
+    "title": "NYC Checkbook MCP server",
+    "description": "An MCP server for New York City spending, contracts, budget, payroll and revenue data from Checkbook NYC, the NYC Comptroller's financial transparency site. Every answer asks the Checkbook NYC API at the time of the question.",
+    "kind": "mcp",
+    "repository": "https://github.com/BetaNYC/nyc-checkbook-mcp",
+    "documentation_url": "https://github.com/BetaNYC/nyc-checkbook-mcp#readme",
+    "package_url": "https://www.npmjs.com/package/@betanyc/nyc-checkbook-mcp",
+    "license": {
+      "name": "MIT",
+      "url": "https://spdx.org/licenses/MIT.html"
+    },
+    "contact_email": "lab@beta.nyc",
+    "keywords": [
+      "nyc",
+      "checkbook",
+      "spending",
+      "contracts",
+      "budget",
+      "payroll",
+      "revenue",
+      "comptroller",
+      "financial transparency"
+    ]
+  },
+  "sources": [
+    {
+      "id": "spending",
+      "title": "City spending (checks)",
+      "what": "Checks the City paid: agency, payee, amount, issue date, contract, expense and spending category, M/WBE category, fiscal year and budget code.",
+      "source_name": "Checkbook NYC API",
+      "publisher": {
+        "name": "Office of the New York City Comptroller",
+        "url": "https://comptroller.nyc.gov/"
+      },
+      "source_url": "https://www.checkbooknyc.com/data-feeds/api",
+      "official": true,
+      "how_gathered": "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Spending) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
+      "changes": {
+        "changed": true,
+        "steps": [
+          "reshaped",
+          "fields-removed"
+        ],
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+      },
+      "verify_at": "https://www.checkbooknyc.com/",
+      "freshness": {
+        "kind": "live"
+      },
+      "update_frequency": "unknown",
+      "coverage": {
+        "start": null,
+        "end": null,
+        "geography": "New York City: citywide agencies",
+        "known_gaps": []
+      },
+      "terms": {
+        "license_name": "None stated by the publisher",
+        "terms_url": "https://comptroller.nyc.gov/disclaimer/",
+        "credit_line": "Source: Checkbook NYC, Office of the New York City Comptroller."
+      },
+      "report_errors": {
+        "upstream_url": "https://groups.google.com/group/checkbooknyc",
+        "upstream_email": "checkbooknyc@googlegroups.com"
+      },
+      "tools": [
+        "search_spending",
+        "get_agency_spending"
+      ],
+      "caveats": [
+        "The Comptroller does not publish an update schedule for checkbooknyc.com. The README of the Checkbook NYC software says a typical frequency for loading data is a few times per week, but does not say how often the Comptroller's own site loads it.",
+        "Checkbook NYC links every page to the Comptroller's website disclaimer, which says the Comptroller does not guarantee that the information is accurate, complete or current, and that commercial use of the materials needs the Comptroller's written permission.",
+        "Figures depend on what City agencies report to the Comptroller's office. Records may be incomplete, delayed, or reflect later amendments, so check important figures on checkbooknyc.com.",
+        "A count of zero means the API found no matching records. When the API cannot be reached or refuses a request, the tool answers with an error instead.",
+        "The Checkbook NYC forum is public: anything posted there can be read by anyone."
+      ],
+      "corrections": [
+        "2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records",
+        "2026-07-21-tools-ignored-settings-they-did-not-have-without-saying-so",
+        "2026-07-06-agency-codes-lost-their-leading-zero"
+      ]
+    },
+    {
+      "id": "contracts",
+      "title": "City contracts",
+      "what": "Registered and pending City contracts: vendor, purpose, agency, original and current amounts, amount spent, dates, award method, contract type, industry, PIN and M/WBE category, with subcontractor details on request.",
+      "source_name": "Checkbook NYC API",
+      "publisher": {
+        "name": "Office of the New York City Comptroller",
+        "url": "https://comptroller.nyc.gov/"
+      },
+      "source_url": "https://www.checkbooknyc.com/data-feeds/api",
+      "official": true,
+      "how_gathered": "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Contracts) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
+      "changes": {
+        "changed": true,
+        "steps": [
+          "reshaped",
+          "fields-removed"
+        ],
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+      },
+      "verify_at": "https://www.checkbooknyc.com/",
+      "freshness": {
+        "kind": "live"
+      },
+      "update_frequency": "unknown",
+      "coverage": {
+        "start": null,
+        "end": null,
+        "geography": "New York City: citywide agencies",
+        "known_gaps": [
+          "Registered revenue contracts filtered by fiscal year: the API reports a count but sends no records, so the tool refuses that search. Search by dates instead."
+        ]
+      },
+      "terms": {
+        "license_name": "None stated by the publisher",
+        "terms_url": "https://comptroller.nyc.gov/disclaimer/",
+        "credit_line": "Source: Checkbook NYC, Office of the New York City Comptroller."
+      },
+      "report_errors": {
+        "upstream_url": "https://groups.google.com/group/checkbooknyc",
+        "upstream_email": "checkbooknyc@googlegroups.com"
+      },
+      "tools": [
+        "search_contracts",
+        "get_contract"
+      ],
+      "caveats": [
+        "The API has no search by vendor name for contracts, only by vendor code. Many contracts are held by resellers, so a product's name may not match the contract's vendor.",
+        "Field names follow the API and differ by kind of contract: registered expense contracts use prime_contract_* names; registered revenue and pending contracts use plain names.",
+        "The Comptroller does not publish an update schedule for checkbooknyc.com. The README of the Checkbook NYC software says a typical frequency for loading data is a few times per week, but does not say how often the Comptroller's own site loads it.",
+        "Checkbook NYC links every page to the Comptroller's website disclaimer, which says the Comptroller does not guarantee that the information is accurate, complete or current, and that commercial use of the materials needs the Comptroller's written permission.",
+        "Figures depend on what City agencies report to the Comptroller's office. Records may be incomplete, delayed, or reflect later amendments, so check important figures on checkbooknyc.com.",
+        "A count of zero means the API found no matching records. When the API cannot be reached or refuses a request, the tool answers with an error instead.",
+        "The Checkbook NYC forum is public: anything posted there can be read by anyone."
+      ],
+      "corrections": [
+        "2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records",
+        "2026-07-21-tools-ignored-settings-they-did-not-have-without-saying-so",
+        "2026-07-06-agency-codes-lost-their-leading-zero"
+      ]
+    },
+    {
+      "id": "budget",
+      "title": "City budget",
+      "what": "Budget lines by agency and department: budget code and name, expense category, and the adopted, modified, committed, encumbered and spent amounts.",
+      "source_name": "Checkbook NYC API",
+      "publisher": {
+        "name": "Office of the New York City Comptroller",
+        "url": "https://comptroller.nyc.gov/"
+      },
+      "source_url": "https://www.checkbooknyc.com/data-feeds/api",
+      "official": true,
+      "how_gathered": "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Budget) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
+      "changes": {
+        "changed": true,
+        "steps": [
+          "reshaped",
+          "fields-removed"
+        ],
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+      },
+      "verify_at": "https://www.checkbooknyc.com/",
+      "freshness": {
+        "kind": "live"
+      },
+      "update_frequency": "unknown",
+      "coverage": {
+        "start": null,
+        "end": null,
+        "geography": "New York City: citywide agencies",
+        "known_gaps": []
+      },
+      "terms": {
+        "license_name": "None stated by the publisher",
+        "terms_url": "https://comptroller.nyc.gov/disclaimer/",
+        "credit_line": "Source: Checkbook NYC, Office of the New York City Comptroller."
+      },
+      "report_errors": {
+        "upstream_url": "https://groups.google.com/group/checkbooknyc",
+        "upstream_email": "checkbooknyc@googlegroups.com"
+      },
+      "tools": [
+        "search_budget"
+      ],
+      "caveats": [
+        "The Comptroller does not publish an update schedule for checkbooknyc.com. The README of the Checkbook NYC software says a typical frequency for loading data is a few times per week, but does not say how often the Comptroller's own site loads it.",
+        "Checkbook NYC links every page to the Comptroller's website disclaimer, which says the Comptroller does not guarantee that the information is accurate, complete or current, and that commercial use of the materials needs the Comptroller's written permission.",
+        "Figures depend on what City agencies report to the Comptroller's office. Records may be incomplete, delayed, or reflect later amendments, so check important figures on checkbooknyc.com.",
+        "A count of zero means the API found no matching records. When the API cannot be reached or refuses a request, the tool answers with an error instead.",
+        "The Checkbook NYC forum is public: anything posted there can be read by anyone."
+      ],
+      "corrections": [
+        "2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records",
+        "2026-07-21-tools-ignored-settings-they-did-not-have-without-saying-so",
+        "2026-07-06-agency-codes-lost-their-leading-zero"
+      ]
+    },
+    {
+      "id": "payroll",
+      "title": "City payroll",
+      "what": "Payroll payments by agency, job title, pay frequency and pay date: salary or hourly rate, gross, base, overtime and other pay.",
+      "source_name": "Checkbook NYC API",
+      "publisher": {
+        "name": "Office of the New York City Comptroller",
+        "url": "https://comptroller.nyc.gov/"
+      },
+      "source_url": "https://www.checkbooknyc.com/data-feeds/api",
+      "official": true,
+      "how_gathered": "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Payroll) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
+      "changes": {
+        "changed": true,
+        "steps": [
+          "reshaped",
+          "fields-removed"
+        ],
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+      },
+      "verify_at": "https://www.checkbooknyc.com/",
+      "freshness": {
+        "kind": "live"
+      },
+      "update_frequency": "unknown",
+      "coverage": {
+        "start": null,
+        "end": null,
+        "geography": "New York City: citywide agencies",
+        "known_gaps": [
+          "No employee names. The Checkbook NYC software leaves confidential information such as employees' names and addresses out of its database."
+        ]
+      },
+      "terms": {
+        "license_name": "None stated by the publisher",
+        "terms_url": "https://comptroller.nyc.gov/disclaimer/",
+        "credit_line": "Source: Checkbook NYC, Office of the New York City Comptroller."
+      },
+      "report_errors": {
+        "upstream_url": "https://groups.google.com/group/checkbooknyc",
+        "upstream_email": "checkbooknyc@googlegroups.com"
+      },
+      "tools": [
+        "search_payroll"
+      ],
+      "caveats": [
+        "The Comptroller does not publish an update schedule for checkbooknyc.com. The README of the Checkbook NYC software says a typical frequency for loading data is a few times per week, but does not say how often the Comptroller's own site loads it.",
+        "Checkbook NYC links every page to the Comptroller's website disclaimer, which says the Comptroller does not guarantee that the information is accurate, complete or current, and that commercial use of the materials needs the Comptroller's written permission.",
+        "Figures depend on what City agencies report to the Comptroller's office. Records may be incomplete, delayed, or reflect later amendments, so check important figures on checkbooknyc.com.",
+        "A count of zero means the API found no matching records. When the API cannot be reached or refuses a request, the tool answers with an error instead.",
+        "The Checkbook NYC forum is public: anything posted there can be read by anyone."
+      ],
+      "corrections": [
+        "2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records",
+        "2026-07-21-tools-ignored-settings-they-did-not-have-without-saying-so",
+        "2026-07-06-agency-codes-lost-their-leading-zero"
+      ]
+    },
+    {
+      "id": "revenue",
+      "title": "City revenue",
+      "what": "Revenue by agency, revenue category, source and class, fund and funding class, and fiscal year: adopted, modified and recognized amounts.",
+      "source_name": "Checkbook NYC API",
+      "publisher": {
+        "name": "Office of the New York City Comptroller",
+        "url": "https://comptroller.nyc.gov/"
+      },
+      "source_url": "https://www.checkbooknyc.com/data-feeds/api",
+      "official": true,
+      "how_gathered": "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Revenue) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
+      "changes": {
+        "changed": true,
+        "steps": [
+          "reshaped",
+          "fields-removed"
+        ],
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+      },
+      "verify_at": "https://www.checkbooknyc.com/",
+      "freshness": {
+        "kind": "live"
+      },
+      "update_frequency": "unknown",
+      "coverage": {
+        "start": null,
+        "end": null,
+        "geography": "New York City: citywide agencies",
+        "known_gaps": []
+      },
+      "terms": {
+        "license_name": "None stated by the publisher",
+        "terms_url": "https://comptroller.nyc.gov/disclaimer/",
+        "credit_line": "Source: Checkbook NYC, Office of the New York City Comptroller."
+      },
+      "report_errors": {
+        "upstream_url": "https://groups.google.com/group/checkbooknyc",
+        "upstream_email": "checkbooknyc@googlegroups.com"
+      },
+      "tools": [
+        "search_revenue"
+      ],
+      "caveats": [
+        "The Comptroller does not publish an update schedule for checkbooknyc.com. The README of the Checkbook NYC software says a typical frequency for loading data is a few times per week, but does not say how often the Comptroller's own site loads it.",
+        "Checkbook NYC links every page to the Comptroller's website disclaimer, which says the Comptroller does not guarantee that the information is accurate, complete or current, and that commercial use of the materials needs the Comptroller's written permission.",
+        "Figures depend on what City agencies report to the Comptroller's office. Records may be incomplete, delayed, or reflect later amendments, so check important figures on checkbooknyc.com.",
+        "A count of zero means the API found no matching records. When the API cannot be reached or refuses a request, the tool answers with an error instead.",
+        "The Checkbook NYC forum is public: anything posted there can be read by anyone."
+      ],
+      "corrections": [
+        "2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records",
+        "2026-07-21-tools-ignored-settings-they-did-not-have-without-saying-so",
+        "2026-07-06-agency-codes-lost-their-leading-zero"
+      ]
+    },
+    {
+      "id": "nycedc-contracts",
+      "title": "NYCEDC and other government entity contracts",
+      "what": "Registered expense contracts of the New York City Economic Development Corporation, listed in Checkbook NYC as an Other Government Entity: vendor, purpose, amounts, dates, award method, budget name and commodity line.",
+      "source_name": "Checkbook NYC API",
+      "publisher": {
+        "name": "Office of the New York City Comptroller",
+        "url": "https://comptroller.nyc.gov/"
+      },
+      "source_url": "https://www.checkbooknyc.com/data-feeds/api",
+      "official": true,
+      "how_gathered": "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Contracts_OGE) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
+      "changes": {
+        "changed": true,
+        "steps": [
+          "reshaped",
+          "fields-removed"
+        ],
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+      },
+      "verify_at": "https://www.checkbooknyc.com/",
+      "freshness": {
+        "kind": "live"
+      },
+      "update_frequency": "unknown",
+      "coverage": {
+        "start": null,
+        "end": null,
+        "geography": "New York City Economic Development Corporation",
+        "known_gaps": [
+          "Registered expense contracts only.",
+          "NYCEDC spending is not available through this server."
+        ]
+      },
+      "terms": {
+        "license_name": "None stated by the publisher",
+        "terms_url": "https://comptroller.nyc.gov/disclaimer/",
+        "credit_line": "Source: Checkbook NYC, Office of the New York City Comptroller."
+      },
+      "report_errors": {
+        "upstream_url": "https://groups.google.com/group/checkbooknyc",
+        "upstream_email": "checkbooknyc@googlegroups.com"
+      },
+      "tools": [
+        "search_nycedc_contracts"
+      ],
+      "caveats": [
+        "The Comptroller does not publish an update schedule for checkbooknyc.com. The README of the Checkbook NYC software says a typical frequency for loading data is a few times per week, but does not say how often the Comptroller's own site loads it.",
+        "Checkbook NYC links every page to the Comptroller's website disclaimer, which says the Comptroller does not guarantee that the information is accurate, complete or current, and that commercial use of the materials needs the Comptroller's written permission.",
+        "Figures depend on what City agencies report to the Comptroller's office. Records may be incomplete, delayed, or reflect later amendments, so check important figures on checkbooknyc.com.",
+        "A count of zero means the API found no matching records. When the API cannot be reached or refuses a request, the tool answers with an error instead.",
+        "The Checkbook NYC forum is public: anything posted there can be read by anyone."
+      ],
+      "corrections": [
+        "2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records",
+        "2026-07-21-tools-ignored-settings-they-did-not-have-without-saying-so"
+      ]
+    },
+    {
+      "id": "nycha-contracts",
+      "title": "NYCHA contracts",
+      "what": "New York City Housing Authority contracts at the level of releases and line items: purchase-order type, vendor, amounts ordered, invoiced and current, funding source, program, project and responsibility center.",
+      "source_name": "Checkbook NYC API",
+      "publisher": {
+        "name": "Office of the New York City Comptroller",
+        "url": "https://comptroller.nyc.gov/"
+      },
+      "source_url": "https://www.checkbooknyc.com/data-feeds/api",
+      "official": true,
+      "how_gathered": "Read-only requests to the Checkbook NYC API (https://www.checkbooknyc.com/api, data domain Contracts_NYCHA) at the moment you ask. No key is needed. The server sends at most one request per second, the limit the Comptroller's office set.",
+      "changes": {
+        "changed": true,
+        "steps": [
+          "reshaped",
+          "fields-removed"
+        ],
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+      },
+      "verify_at": "https://www.checkbooknyc.com/",
+      "freshness": {
+        "kind": "live"
+      },
+      "update_frequency": "unknown",
+      "coverage": {
+        "start": null,
+        "end": null,
+        "geography": "New York City Housing Authority",
+        "known_gaps": [
+          "NYCHA spending and payroll are not available through this server.",
+          "Results carry a year only when you filter by fiscal year."
+        ]
+      },
+      "terms": {
+        "license_name": "None stated by the publisher",
+        "terms_url": "https://comptroller.nyc.gov/disclaimer/",
+        "credit_line": "Source: Checkbook NYC, Office of the New York City Comptroller."
+      },
+      "report_errors": {
+        "upstream_url": "https://groups.google.com/group/checkbooknyc",
+        "upstream_email": "checkbooknyc@googlegroups.com"
+      },
+      "tools": [
+        "search_nycha_contracts"
+      ],
+      "caveats": [
+        "The Comptroller does not publish an update schedule for checkbooknyc.com. The README of the Checkbook NYC software says a typical frequency for loading data is a few times per week, but does not say how often the Comptroller's own site loads it.",
+        "Checkbook NYC links every page to the Comptroller's website disclaimer, which says the Comptroller does not guarantee that the information is accurate, complete or current, and that commercial use of the materials needs the Comptroller's written permission.",
+        "Figures depend on what City agencies report to the Comptroller's office. Records may be incomplete, delayed, or reflect later amendments, so check important figures on checkbooknyc.com.",
+        "A count of zero means the API found no matching records. When the API cannot be reached or refuses a request, the tool answers with an error instead.",
+        "The Checkbook NYC forum is public: anything posted there can be read by anyone."
+      ],
+      "corrections": [
+        "2026-07-29-errors-from-the-checkbook-nyc-api-looked-like-no-records",
+        "2026-07-21-tools-ignored-settings-they-did-not-have-without-saying-so"
+      ]
+    },
+    {
+      "id": "smart-search",
+      "title": "Checkbook NYC website search",
+      "what": "Results of the search box on checkbooknyc.com, across spending, contracts, budget, payroll and revenue.",
+      "source_name": "Checkbook NYC",
+      "publisher": {
+        "name": "Office of the New York City Comptroller",
+        "url": "https://comptroller.nyc.gov/"
+      },
+      "source_url": "https://www.checkbooknyc.com/",
+      "official": true,
+      "how_gathered": "Off unless the server is started with CHECKBOOK_ENABLE_SMART_SEARCH=1. Then the tool reads the site's search page (https://www.checkbooknyc.com/smart_search/citywide) at the moment you ask. The Comptroller's office confirmed this page is not part of the supported API, and the site usually blocks programs like this one, so the tool usually answers that it is unavailable.",
+      "changes": {
+        "changed": true,
+        "steps": [
+          "reshaped"
+        ],
+        "detail": "When the page does return results, the server picks each result's fields out of the page text, with their values unchanged."
+      },
+      "verify_at": "https://www.checkbooknyc.com/",
+      "freshness": {
+        "kind": "live"
+      },
+      "update_frequency": "unknown",
+      "coverage": {
+        "start": null,
+        "end": null,
+        "geography": "New York City",
+        "known_gaps": []
+      },
+      "terms": {
+        "license_name": "None stated by the publisher",
+        "terms_url": "https://comptroller.nyc.gov/disclaimer/",
+        "credit_line": "Source: Checkbook NYC, Office of the New York City Comptroller."
+      },
+      "report_errors": {
+        "upstream_url": "https://groups.google.com/group/checkbooknyc",
+        "upstream_email": "checkbooknyc@googlegroups.com"
+      },
+      "tools": [
+        "smart_search"
+      ],
+      "caveats": [
+        "Prefer the other tools: search_spending with payee_name finds checks paid to a vendor by name.",
+        "The Checkbook NYC forum is public: anything posted there can be read by anyone."
+      ],
+      "corrections": []
+    }
+  ]
+}

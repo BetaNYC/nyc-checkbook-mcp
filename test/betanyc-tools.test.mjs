@@ -1,8 +1,10 @@
-// whats_changed and about_betanyc, the two tools BetaNYC is adding to each of its MCP servers
-// (betanyc-ai-workspace platform/system/whats-changed-standard.md § 7). They read this repo's
-// WHATS-CHANGED.md and never touch the network. This server uses McpServer, so src/betanyc.ts
-// registers them with registerTool and zod input schemas equivalent to the module's JSON
-// Schemas; the first test compares the two field by field so either side drifting fails.
+// whats_changed, about_betanyc and about_data, the three tools BetaNYC adds to each of its MCP
+// servers (betanyc-ai-workspace platform/system/whats-changed-standard.md § 7 and
+// about-data-standard.md § 3). They read this repo's WHATS-CHANGED.md and DATA-SOURCES.json and
+// never touch the network. This server uses McpServer, so src/betanyc.ts registers them with
+// registerTool and zod input schemas equivalent to the module's JSON Schemas; the first test
+// compares the two field by field so either side drifting fails. about_data has its own tests
+// in test/about-data.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -13,7 +15,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import { registerTools } from "../dist/tools.js";
-import { betanyc } from "../dist/betanyc.js";
+import { betanyc, betanycTools } from "../dist/betanyc.js";
 import { SHARED_MODULE_VERSION, BETANYC_TOOLS } from "../dist/betanyc-tools.js";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url)));
@@ -45,13 +47,17 @@ async function connect() {
   return { client, close: async () => { await client.close(); await server.close(); } };
 }
 
-test("tools/list advertises the two shared tools with input schemas equal to the module's, field by field", async () => {
+test("tools/list advertises the three shared tools with input schemas equal to the module's, field by field", async () => {
   const { client, close } = await connect();
   try {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, CHECKBOOK_TOOLS + 2);
+    assert.equal(tools.length, CHECKBOOK_TOOLS + 3);
     assert.equal(new Set(tools.map((t) => t.name)).size, tools.length, "tool names are unique");
-    for (const def of BETANYC_TOOLS) {
+    // The factory's definitions: the module's, with this server's topics added to about_data's
+    // description.
+    const defs = betanycTools({ smartSearch: false }).tools;
+    assert.deepEqual(defs.map((d) => d.name), BETANYC_TOOLS.map((d) => d.name));
+    for (const def of defs) {
       const t = tools.find((x) => x.name === def.name);
       assert.ok(t, def.name);
       assert.equal(t.title, def.title, `${def.name} title`);
@@ -192,7 +198,7 @@ test("the Checkbook tools still go through McpServer: its zod validation and its
   }
 });
 
-test("over stdio, the built server answers both tools with structuredContent", async () => {
+test("over stdio, the built server answers the shared tools with structuredContent", async () => {
   // No outputSchema is registered (src/betanyc.ts), so the client does not validate; the
   // answers are checked against the module's outputSchema here.
   const transport = new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], stderr: "ignore" });
@@ -200,22 +206,26 @@ test("over stdio, the built server answers both tools with structuredContent", a
   await client.connect(transport);
   try {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, CHECKBOOK_TOOLS + 2);
+    assert.equal(tools.length, CHECKBOOK_TOOLS + 3);
     const wc = await client.callTool({ name: "whats_changed", arguments: { limit: 3 } });
     assert.equal(wc.structuredContent.returned, 3);
     assertMatchesModuleOutputSchema("whats_changed", wc.structuredContent);
     const about = await client.callTool({ name: "about_betanyc", arguments: {} });
     assert.equal(about.structuredContent.server.version, pkg.version);
     assertMatchesModuleOutputSchema("about_betanyc", about.structuredContent);
+    const data = await client.callTool({ name: "about_data", arguments: {} });
+    assert.notEqual(data.isError, true, textOf(data));
+    assert.equal(data.structuredContent.contact_email, "lab@beta.nyc");
+    assertMatchesModuleOutputSchema("about_data", data.structuredContent);
   } finally {
     await client.close();
   }
 });
 
-test("WHATS-CHANGED.md ships in the npm package", () => {
+test("WHATS-CHANGED.md, DATA-SOURCES.json and data.json ship in the npm package", () => {
   const out = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { encoding: "utf8" });
   const files = JSON.parse(out)[0].files.map((f) => f.path);
-  assert.ok(files.includes("WHATS-CHANGED.md"), files.join(", "));
+  for (const f of ["WHATS-CHANGED.md", "DATA-SOURCES.json", "data.json"]) assert.ok(files.includes(f), `${f}: ${files.join(", ")}`);
   assert.ok(files.includes("dist/betanyc-tools.js"));
   assert.ok(files.includes("dist/betanyc.js"));
 });

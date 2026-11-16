@@ -615,12 +615,14 @@ export function nychaContractsCriteria(input: NychaContractsInput): Criteria[] {
 // ─── Tool registration ───────────────────────────────────────────────────────
 
 /**
- * Register every tool: this server's Checkbook tools, then whats_changed and about_betanyc,
- * the two tools BetaNYC is adding to each of its MCP servers (src/betanyc.ts).
+ * Register every tool: this server's Checkbook tools, then whats_changed, about_betanyc and
+ * about_data, the three tools BetaNYC adds to each of its MCP servers (src/betanyc.ts).
+ * about_data is told whether smart_search is on, so it does not describe an off tool's
+ * source as "fetched when you ask".
  */
 export function registerTools(server: McpServer): void {
   registerCheckbookTools(server);
-  registerBetanycTools(server);
+  registerBetanycTools(server, { smartSearch: smartSearchEnabled() });
 }
 
 function registerCheckbookTools(server: McpServer): void {

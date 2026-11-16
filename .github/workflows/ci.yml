@@ -46,7 +46,9 @@ on:
       - ".github/workflows/**"
       - "WHATS-CHANGED.md"
       - "CHANGELOG.md"
-      - "scripts/whats_changed.py"
+      - "DATA-SOURCES.json"
+      - "data.json"
+      - "scripts/**"
   push:
     branches: [main]
     paths:
@@ -57,7 +59,9 @@ on:
       - ".github/workflows/**"
       - "WHATS-CHANGED.md"
       - "CHANGELOG.md"
-      - "scripts/whats_changed.py"
+      - "DATA-SOURCES.json"
+      - "data.json"
+      - "scripts/**"
   # Manual trigger — lets us fire a run on any branch. Needed because a
   # path-scoped pull_request/push event does not fire on the very PR that
   # introduces the workflow, so this gate never executed on its own PR (#2).
@@ -96,6 +100,55 @@ jobs:
 
       - name: Build and test
         run: npm test
+
+  # The about-data standard (betanyc-ai-workspace platform/system/about-data-standard.md § 7).
+  # scripts/whats_changed.py, scripts/tests/catalog_validate.py, scripts/mcp_shared/ and
+  # src/betanyc-tools.ts are copies of the workspace's canonical files: never edit them here.
+  # 1. DATA-SOURCES.json is valid and every tool the built server lists has a source.
+  # 2. data.json (DCAT-US 3.0) matches DATA-SOURCES.json; rebuild with the same command
+  #    without --check. 3. DATA-SOURCES.json against its JSON Schema and data.json against the
+  #    vendored DCAT-US 3.0 schema, with pinned validators (CI only, not runtime dependencies).
+  # The release gate (`about-data check --release`, which also refuses the placeholder contact)
+  # runs in release.yml before `npm publish`. It is not run here.
+  about-data:
+    name: About data
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build
+        run: npm ci && npm run build
+
+      - name: The server's tool list
+        run: node scripts/list-tools.mjs > "$RUNNER_TEMP/tools.json"
+
+      - name: DATA-SOURCES.json is valid and explains every tool
+        run: python3 scripts/whats_changed.py about-data check DATA-SOURCES.json --tools-file "$RUNNER_TEMP/tools.json"
+
+      - name: data.json is current
+        run: python3 scripts/whats_changed.py about-data catalog DATA-SOURCES.json --check
+
+      - name: Validate against the JSON Schema and DCAT-US 3.0
+        run: |
+          uv run --no-project --with jsonschema==4.26.0 --with referencing==0.37.0 --with rfc3987==1.3.8 \
+            python scripts/tests/catalog_validate.py data-sources DATA-SOURCES.json
+          uv run --no-project --with jsonschema==4.26.0 --with referencing==0.37.0 --with rfc3987==1.3.8 \
+            python scripts/tests/catalog_validate.py dcat data.json
 
   # The What's changed standard (betanyc-ai-workspace
   # platform/system/whats-changed-standard.md § 10). scripts/whats_changed.py is a copy of the
