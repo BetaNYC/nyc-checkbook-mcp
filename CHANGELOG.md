@@ -40,10 +40,15 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
 
 ### Changed
 
-- `src/betanyc-tools.ts` is the workspace's shared module 1.4.0 (was 1.2.4) and
-  `scripts/whats_changed.py` is 1.4.0, both copied in unchanged, with the validator kit.
-  Never edit the copies. 1.4.0 gives each source one of three answers on whether it is
-  official, naming the source, its publisher and a link.
+- `src/betanyc-tools.ts` is the workspace's shared module 1.5.0 (was 1.2.4) and
+  `scripts/whats_changed.py` is 1.4.1, both copied in unchanged, with the validator kit
+  (`data-sources.schema.json` as shipped with 1.4.1). Never edit the copies. 1.4.0 gives
+  each source one of three answers on whether it is official, naming the source, its
+  publisher and a link; 1.5.0 adds helpers for a server's own tools (annotations,
+  provenance, errors, tool-list size). The 1.5.0 copy depends on
+  BetaNYC/betanyc-ai-workspace#1702 merging.
+- Every Checkbook tool declares MCP tool annotations: `readOnlyHint: true`,
+  `openWorldHint: true` (each calls the live Checkbook NYC API) and a title (#50).
 - `src/betanyc.ts` registers the three shared tools from the module's factory output, so
   `about_data`'s description lists this server's topics. When `smart_search` is off (the
   default), the factory gets `unavailableSources` for its source, so `about_data` says that
@@ -85,6 +90,11 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   lab@beta.nyc and matches the module's `outputSchema`; `npm pack --dry-run` lists
   `DATA-SOURCES.json` and `data.json`.
 - `test/tools.test.mjs`: `about_data` in the expected tool names.
+- `test/annotations.test.mjs`: every tool in `tools/list` is annotated read-only with
+  `openWorldHint` (`assertEveryToolAnnotated`); every Checkbook tool is open-world and has a
+  title (#50).
+- `test/tool-size.test.mjs`: `tools/list` plus the instructions stay within 24,000
+  characters (23,122 measured 2026-11-18), the nyc-311-mcp measure (#56).
 - `test/agency-codes.test.mjs`: every agency code in the README table, the README examples
   and the tool descriptions is one checked against Checkbook NYC, with its own agency (#37).
 - `test/non-xml-reply.test.mjs`: each reply kind from its recorded sample, the evidence, "not

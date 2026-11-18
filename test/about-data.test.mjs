@@ -42,8 +42,8 @@ async function listedToolNames() {
 const ask = (args, smartSearch = false) => betanycTools({ smartSearch }).call("about_data", args);
 const one = (r, topic) => r.structuredContent.sources.find((s) => s.topic === topic);
 
-test("shared module 1.4.0", () => {
-  assert.equal(SHARED_MODULE_VERSION, "1.4.0");
+test("shared module 1.5.0", () => {
+  assert.equal(SHARED_MODULE_VERSION, "1.5.0");
 });
 
 test("every tool says where its data comes from, so a new tool cannot ship unexplained", async () => {

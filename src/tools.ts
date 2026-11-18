@@ -23,6 +23,7 @@ import {
   type DataDomain,
 } from "./checkbook.js";
 import { registerBetanycTools } from "./betanyc.js";
+import { readOnlyAnnotations } from "./betanyc-tools.js";
 
 // ─── Disclaimer ──────────────────────────────────────────────────────────────
 
@@ -625,10 +626,14 @@ export function registerTools(server: McpServer): void {
   registerBetanycTools(server, { smartSearch: smartSearchEnabled() });
 }
 
+// Every Checkbook tool only reads, and calls the live Checkbook NYC API, so each one is
+// readOnlyHint: true, openWorldHint: true (#50). smart_search too: when it is turned on, it
+// calls the checkbooknyc.com website. test/annotations.test.mjs fails on a tool without them.
 function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "smart_search",
     {
+      annotations: readOnlyAnnotations(true, "Smart search (off by default)"),
       description:
         "DISABLED BY DEFAULT (opt in with CHECKBOOK_ENABLE_SMART_SEARCH=1). The " +
         "checkbooknyc.com /smart_search endpoint is not a supported Checkbook NYC API " +
@@ -682,6 +687,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_contracts",
     {
+      annotations: readOnlyAnnotations(true, "Search contracts"),
       description:
         "Search NYC registered and pending contracts with structured filters. " +
         "Filter by agency, vendor_code, contract ID, date range, amount range, industry, MWBE category, and more. " +
@@ -840,6 +846,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "get_contract",
     {
+      annotations: readOnlyAnnotations(true, "Get one contract"),
       description:
         "Look up a single NYC contract by its contract ID. Returns full contract details. " +
         "Use this after finding a contract ID via search_contracts or search_spending. " +
@@ -886,6 +893,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_spending",
     {
+      annotations: readOnlyAnnotations(true, "Search spending"),
       description:
         "Search NYC spending (check) records. Filter by agency, payee, contract, date range, amount, or expense category. " +
         "Either fiscal_year or issue_date_from is required.",
@@ -938,6 +946,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_budget",
     {
+      annotations: readOnlyAnnotations(true, "Search budget"),
       description: "Search NYC budget data by agency, department, fiscal year, or budget code.",
       inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
@@ -969,6 +978,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_payroll",
     {
+      annotations: readOnlyAnnotations(true, "Search payroll"),
       description:
         "Search NYC payroll records by agency, job title, pay frequency, pay date, or amount range. " +
         "Requires fiscal_year or calendar_year. " +
@@ -1023,6 +1033,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_revenue",
     {
+      annotations: readOnlyAnnotations(true, "Search revenue"),
       description:
         "Search NYC revenue data by agency, revenue category/class/source, fund class, or fiscal year.",
       inputSchema: strictSchema({
@@ -1065,6 +1076,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "get_agency_spending",
     {
+      annotations: readOnlyAnnotations(true, "Agency spending for a year"),
       description:
         "Get all spending for a specific NYC agency in a fiscal year. " +
         "A convenience wrapper around search_spending for agency-level financial overview.",
@@ -1096,6 +1108,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_nycedc_contracts",
     {
+      annotations: readOnlyAnnotations(true, "Search NYCEDC contracts"),
       description:
         "Search NYCEDC / Other Government Entities (OGE) contracts (Checkbook domain Contracts_OGE). " +
         "These are separate from citywide contracts and cover economic-development-corporation and " +
@@ -1151,6 +1164,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_nycha_contracts",
     {
+      annotations: readOnlyAnnotations(true, "Search NYCHA contracts"),
       description:
         "Search NYCHA (New York City Housing Authority) contracts (Checkbook domain Contracts_NYCHA). " +
         "These are separate from citywide contracts and are reported at release / line-item granularity " +
