@@ -24,23 +24,62 @@ import {
   type DataDomain,
 } from "./checkbook.js";
 import { registerBetanycTools } from "./betanyc.js";
-import { readOnlyAnnotations, toolError } from "./betanyc-tools.js";
+import { parseDataSources, provenance, readOnlyAnnotations, toolError } from "./betanyc-tools.js";
+import { readFileSync } from "node:fs";
 
 // ─── Disclaimer ──────────────────────────────────────────────────────────────
 
 const DISCLAIMER =
-  "\n\n---\n⚠️ Data disclaimer: Results are sourced from Checkbook NYC, " +
-  "published by the NYC Office of the Comptroller. Accuracy depends on data " +
+  // The source and publisher are in the source line above it (answerProvenance).
+  "\n\n---\n⚠️ Data disclaimer: Accuracy depends on data " +
   "submitted by City agencies to the Comptroller's office. Records may be " +
   "incomplete, delayed, or reflect amendments. Verify critical figures " +
   "directly at checkbooknyc.com or via FOIL request to the relevant agency.";
 
-function withDisclaimer(json: unknown): string {
-  return JSON.stringify(json, null, 2) + DISCLAIMER;
+// Every data answer names its source, a link and its as-of (#52, #53), from the source this
+// server's DATA-SOURCES.json gives for the tool, so an answer and about_data cannot disagree.
+// Every Checkbook tool asks the live API, so the as-of is the time of the request.
+const DATA_SOURCES = parseDataSources(
+  readFileSync(new URL("../DATA-SOURCES.json", import.meta.url), "utf8")
+).doc;
+
+/** The provenance block for one answer from `tool`. Throws if DATA-SOURCES.json has no
+ * source for it (assertEveryToolExplained in the tests keeps that from shipping). */
+export function answerProvenance(tool: string, now: Date = new Date()) {
+  const s = DATA_SOURCES?.sources.find((x) => x.valid && x.tools.includes(tool));
+  if (!s?.source_name || !s.publisher?.name || !s.source_url) {
+    throw new Error(`DATA-SOURCES.json has no usable source for ${tool}`);
+  }
+  return provenance(
+    { sourceName: s.source_name, publisher: s.publisher.name, sourceUrl: s.source_url, kind: "live" },
+    now
+  );
 }
 
-function textResult(json: unknown): CallToolResult {
-  return { content: [{ type: "text", text: withDisclaimer(json) }] };
+/** A data answer: the JSON (with its `source` object), then the source line and the disclaimer. */
+function textResult(tool: string, json: Record<string, unknown>): CallToolResult {
+  const p = answerProvenance(tool);
+  return {
+    content: [
+      { type: "text", text: `${JSON.stringify({ ...json, source: p.provenance }, null, 2)}\n\n${p.text}${DISCLAIMER}` },
+    ],
+  };
+}
+
+/** One plain sentence on which records an answer holds and how to get the rest (#54). */
+export function showing(total: number, page: number, pageSize: number, returned: number): string {
+  const n = (x: number) => x.toLocaleString("en-US");
+  if (total === 0) return "No records match.";
+  const from = (page - 1) * pageSize + 1;
+  if (returned === 0) {
+    const last = Math.ceil(total / pageSize);
+    return `No records on page ${n(page)}: there are ${n(total)}, so the last page at page_size=${n(pageSize)} is ${n(last)}.`;
+  }
+  const to = from + returned - 1;
+  const rest = total - to;
+  return rest > 0
+    ? `Showing records ${n(from)} to ${n(to)} of ${n(total)}. For the next ${n(Math.min(pageSize, rest))}, call again with page=${n(page + 1)} (page_size up to 20,000).`
+    : `Showing records ${n(from)} to ${n(to)} of ${n(total)}, the last of them.`;
 }
 
 const ISSUES_URL = "https://github.com/BetaNYC/nyc-checkbook-mcp/issues";
@@ -135,8 +174,12 @@ export function rangeCriterion(
 // caller's context window, not this number, which is why the default stays 50.
 export const MAX_RECORDS_PER_CALL = 20_000;
 
+/** Rows get_contract asks for (one per contract version or line). */
+export const GET_CONTRACT_MAX = 10;
+
 
 export async function runSearch(
+  tool: string,
   domain: DataDomain,
   columns: string[],
   criteria: Criteria[],
@@ -161,12 +204,13 @@ export async function runSearch(
   // (issue #21), which guard() turns into an isError result. So total_records is
   // only ever reported for a genuine success — a real 0 means "no matching
   // records", never "the request failed".
-  return textResult({
+  return textResult(tool, {
     ...extra,
     total_records: result.total_records,
     page,
     page_size: pageSize,
     has_more: result.total_records > page * pageSize,
+    showing: showing(result.total_records, page, pageSize, result.records.length),
     records: result.records,
   });
 }
@@ -699,10 +743,11 @@ function registerCheckbookTools(server: McpServer): void {
         if (!result.available) {
           throw new GuidanceError(`Smart search is not available: ${result.reason}. ${result.fallback ?? ""}`.trim());
         }
-        return textResult({
+        return textResult("smart_search", {
           query,
           total_results: result.total,
           returned: result.results.length,
+          showing: showing(result.total, 1, limit ?? 25, result.results.length),
           results: result.results,
         });
       })
@@ -858,6 +903,7 @@ function registerCheckbookTools(server: McpServer): void {
           throw new GuidanceError(REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE);
         }
         return runSearch(
+          "search_contracts",
           "Contracts",
           contractsColumns(criteria, input.include_sub_vendors),
           criteria,
@@ -902,7 +948,7 @@ function registerCheckbookTools(server: McpServer): void {
         const result = await callCheckbookApi({
           type_of_data: "Contracts",
           records_from: 1,
-          max_records: 10,
+          max_records: GET_CONTRACT_MAX,
           criteria,
           // Per (status, category), as search_contracts does (#42). Sending the
           // expense list for category=revenue failed every revenue lookup.
@@ -910,7 +956,18 @@ function registerCheckbookTools(server: McpServer): void {
         });
         // No `error` field: an upstream failure throws (issue #21) and is
         // surfaced by guard(), so `records` is only ever a genuine result set.
-        return textResult({ contract_id, records: result.records });
+        // Up to GET_CONTRACT_MAX rows (one per version or line), with the count, so a
+        // contract with more is never cut off silently (#54).
+        return textResult("get_contract", {
+          contract_id,
+          total_records: result.total_records,
+          showing:
+            result.total_records > result.records.length
+              ? `Showing the first ${result.records.length} of ${result.total_records} records for this contract. ` +
+                `For all of them, use search_contracts with contract_id="${contract_id}" and page/page_size.`
+              : showing(result.total_records, 1, GET_CONTRACT_MAX, result.records.length),
+          records: result.records,
+        });
       })
   );
 
@@ -963,7 +1020,7 @@ function registerCheckbookTools(server: McpServer): void {
         ]) {
           if (range) criteria.push(range);
         }
-        return runSearch("Spending", DEFAULT_COLUMNS["Spending"], criteria, input.page, input.page_size);
+        return runSearch("search_spending", "Spending", DEFAULT_COLUMNS["Spending"], criteria, input.page, input.page_size);
       })
   );
 
@@ -984,6 +1041,7 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() =>
         runSearch(
+          "search_budget",
           "Budget",
           DEFAULT_COLUMNS["Budget"],
           // The Budget domain's year criterion is named "year", not "fiscal_year".
@@ -1050,7 +1108,7 @@ function registerCheckbookTools(server: McpServer): void {
         if (payDate) criteria.push(payDate);
         const amount = rangeCriterion("amount", input.amount_min, input.amount_max, "0", "99999999");
         if (amount) criteria.push(amount);
-        return runSearch("Payroll", DEFAULT_COLUMNS["Payroll"], criteria, input.page, input.page_size);
+        return runSearch("search_payroll", "Payroll", DEFAULT_COLUMNS["Payroll"], criteria, input.page, input.page_size);
       })
   );
 
@@ -1079,6 +1137,7 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() =>
         runSearch(
+          "search_revenue",
           "Revenue",
           DEFAULT_COLUMNS["Revenue"],
           valueCriteria(input, {
@@ -1116,6 +1175,7 @@ function registerCheckbookTools(server: McpServer): void {
     async ({ agency_code, fiscal_year, page, page_size }) =>
       guard(() =>
         runSearch(
+          "get_agency_spending",
           "Spending",
           DEFAULT_COLUMNS["Spending"],
           [
@@ -1176,6 +1236,7 @@ function registerCheckbookTools(server: McpServer): void {
       guard(() => {
         const criteria = nycedcContractsCriteria(input);
         return runSearch(
+          "search_nycedc_contracts",
           "Contracts_OGE",
           nycedcContractsColumns(criteria),
           criteria,
@@ -1235,6 +1296,7 @@ function registerCheckbookTools(server: McpServer): void {
       guard(() => {
         const criteria = nychaContractsCriteria(input);
         return runSearch(
+          "search_nycha_contracts",
           "Contracts_NYCHA",
           nychaContractsColumns(criteria),
           criteria,

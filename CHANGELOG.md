@@ -79,6 +79,14 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   stack trace. Refused inputs (vendor name, revenue with fiscal year, a missing year,
   `smart_search` while off) are plain guidance instead of JSON. A bug in the server says
   where to report it. `CheckbookApiError` carries the API's words in `upstream`.
+- Every data answer carries a `source` object (`source`, `publisher`, `source_url`,
+  `as_of`, `as_of_kind`, the field names `about_data` uses) and a "Source: … As of … Link: …"
+  line, built with the shared module's `provenance` from the tool's source in
+  `DATA-SOURCES.json` (#52, #53). The as-of is the time of the request. The disclaimer no
+  longer repeats the source and publisher.
+- Every list answer has a `showing` sentence: which records it holds, of how many, and which
+  `page` to ask for next (#54). `get_contract` returns `total_records` and says when a
+  contract has more than the 10 rows it shows, and how to get all of them.
 - The 60 s request timeout now has its reason written next to it (#51): a timeout is
   retried, and a retry re-sends a slow query to an edge that blocks bursts.
 - `npm run check:columns -- <relative path>` reads the path from where npm was run
@@ -107,6 +115,10 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   non-XML reply through a tool, plus refused inputs and an unexpected error: each is
   `isError`, says what to try, has no stack frame and at most 500 characters of upstream
   text (#57). `test/http-client.test.mjs` reads the API's words from `err.upstream`.
+- `test/answers.test.mjs`: every Checkbook tool's answer has the source, publisher, link
+  and a retrieval as-of from `DATA-SOURCES.json`; a 19,139-record result says "Showing
+  records 1 to 50 of 19,139" and the next page; the last page, no matches, a page past the
+  end; `get_contract` with more rows than it shows (#52, #53, #54).
 - `test/agency-codes.test.mjs`: every agency code in the README table, the README examples
   and the tool descriptions is one checked against Checkbook NYC, with its own agency (#37).
 - `test/non-xml-reply.test.mjs`: each reply kind from its recorded sample, the evidence, "not

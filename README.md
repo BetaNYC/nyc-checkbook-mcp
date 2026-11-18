@@ -69,6 +69,8 @@ Exposes 12 tools over MCP:
 | `about_betanyc` | Who built this server, where to report a bug in this server or ask for a new feature, and BetaNYC's links |
 | `about_data` | Where each kind of data comes from, from [DATA-SOURCES.json](DATA-SOURCES.json): the publisher, whether it is an official record, how current it is, terms and credit line, where to check a figure and where to report an error (filter by topic or tool name) |
 
+Every answer names its source and publisher, links to the Checkbook NYC API page, and gives the time it was fetched (a `source` object and a "Source: … As of … Link: …" line). Every list says which records it holds, of how many, and which `page` to ask for next (a `showing` sentence).
+
 Every tool only reads data, and says so to your AI app: each declares MCP tool annotations (`readOnlyHint: true`; `openWorldHint: true` on the Checkbook tools, which call the live API).
 
 > **Finding a vendor by name?** The contracts API filters vendors only by `vendor_code` (there is no name lookup). Use `search_spending(payee_name="…")` to find checks paid to a named vendor. Note that many NYC contracts are held by resellers, so a software/product name may not match the contract's own vendor.
