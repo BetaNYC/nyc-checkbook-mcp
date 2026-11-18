@@ -234,15 +234,7 @@ test("two different tool calls at once: the second request starts 1.1 s after th
 test("#51 no retry starts more than 120 s after the call began, time waiting in the queue included", async () => {
   const policy = { maxAttempts: 3, baseDelayMs: 500, maxDelayMs: 8_000, deadlineMs: 120_000, timeoutMs: 60_000 };
   let retried = 0;
-  const slowOther = fetchWithRetry("http://x/other", {}, policy, {
-    sleepImpl: (ms) => clock.sleep(ms),
-    makeSignal: () => undefined,
-    fetchImpl: async () => {
-      await clock.sleep(130_000); // another call's request holds the queue for 130 s
-      return new Response(OK_XML, { status: 200 });
-    },
-  });
-  // Started at the same moment, but this one's first attempt is first in the queue.
+  // This call's first attempt is first in the queue: a 503 at once, so it plans a retry.
   const call = fetchWithRetry("http://x/api", {}, policy, {
     sleepImpl: (ms) => clock.sleep(ms),
     randomImpl: () => 0,
@@ -250,6 +242,16 @@ test("#51 no retry starts more than 120 s after the call began, time waiting in 
     fetchImpl: async () => {
       retried++;
       return new Response("busy", { status: 503 });
+    },
+  });
+  // Started at the same moment, so it is next in the queue, and its request holds the queue
+  // for 130 s. The retry's turn comes after that: past the 120 s deadline.
+  const slowOther = fetchWithRetry("http://x/other", {}, policy, {
+    sleepImpl: (ms) => clock.sleep(ms),
+    makeSignal: () => undefined,
+    fetchImpl: async () => {
+      await clock.sleep(130_000);
+      return new Response(OK_XML, { status: 200 });
     },
   });
   const [res] = await Promise.all([call, slowOther]);
