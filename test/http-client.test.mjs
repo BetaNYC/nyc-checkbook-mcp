@@ -317,7 +317,8 @@ test("#21 an API-level failure status throws, it does not resolve to an empty se
   try {
     await assert.rejects(
       () => callCheckbookApi({ type_of_data: "Revenue" }),
-      (err) => err instanceof CheckbookApiError && err.kind === "api" && /bad param/.test(err.message)
+      // The API's own words travel in err.upstream, cut to 500 characters at the tool layer (#57).
+      (err) => err instanceof CheckbookApiError && err.kind === "api" && err.upstream === "bad param"
     );
   } finally {
     globalThis.fetch = original;

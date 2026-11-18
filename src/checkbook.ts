@@ -82,11 +82,14 @@ export interface ApiSuccess {
 export class CheckbookApiError extends Error {
   readonly status?: number;
   readonly kind: "network" | "redirect" | "http" | "api" | "silent-empty" | ReplyKind;
-  constructor(message: string, opts: { status?: number; kind: CheckbookApiError["kind"] }) {
+  /** The API's own words, passed on to the caller cut to 500 characters (toolError, #57). */
+  readonly upstream?: string;
+  constructor(message: string, opts: { status?: number; kind: CheckbookApiError["kind"]; upstream?: string }) {
     super(message);
     this.name = "CheckbookApiError";
     this.status = opts.status;
     this.kind = opts.kind;
+    this.upstream = opts.upstream;
   }
 }
 
@@ -180,6 +183,11 @@ export function parseResponse(xmlText: string): ApiResponse {
 // again drift from the McpServer version / published package. This UA is how the
 // Comptroller's office identifies our traffic, so it must be truthful.
 const USER_AGENT = `betanyc-checkbook-mcp/${VERSION} (github.com/BetaNYC/nyc-checkbook-mcp)`;
+// 60 s, longer than the usual 15-30 s, on purpose (#51). A timed-out request is retried,
+// and a retry re-sends a query the server may still be running, against an edge that
+// blocks clients for bursts (1 req/sec; see pace()). One page can be up to 20,000 records of
+// XML, and Checkbook's own database cancels slow queries itself (SQLSTATE 57014, #39), so a
+// short client timeout would mostly turn slow answers into extra requests.
 const REQUEST_TIMEOUT_MS = 60_000;
 
 // ─── Rate pacing ─────────────────────────────────────────────────────────────
@@ -522,7 +530,10 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiSuccess> {
   // spends the 1 req/sec budget on a reply we cannot use.
   if (parsed.notApiXml) throw nonXmlReplyError(response.status, response.headers.get("content-type"), text);
   if (!parsed.success) {
-    throw new CheckbookApiError(parsed.error ?? "Unknown Checkbook API error", { kind: "api" });
+    throw new CheckbookApiError("Checkbook NYC refused the request.", {
+      kind: "api",
+      upstream: parsed.error ?? "(no message)",
+    });
   }
   assertNotSilentEmpty(req, parsed.total_records, parsed.records.length);
   return { total_records: parsed.total_records, records: parsed.records };

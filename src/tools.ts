@@ -17,13 +17,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   callCheckbookApi,
+  CheckbookApiError,
   smartSearch,
   DEFAULT_COLUMNS,
   type Criteria,
   type DataDomain,
 } from "./checkbook.js";
 import { registerBetanycTools } from "./betanyc.js";
-import { readOnlyAnnotations } from "./betanyc-tools.js";
+import { readOnlyAnnotations, toolError } from "./betanyc-tools.js";
 
 // ─── Disclaimer ──────────────────────────────────────────────────────────────
 
@@ -42,26 +43,58 @@ function textResult(json: unknown): CallToolResult {
   return { content: [{ type: "text", text: withDisclaimer(json) }] };
 }
 
-function errorResult(json: unknown): CallToolResult {
-  return {
-    content: [{ type: "text", text: JSON.stringify(json, null, 2) }],
-    isError: true,
-  };
+const ISSUES_URL = "https://github.com/BetaNYC/nyc-checkbook-mcp/issues";
+
+/** What to try after a Checkbook NYC failure, by kind (#57). Non-XML replies (#39) carry
+ * their own advice in the message. */
+function whatToTry(err: CheckbookApiError): string {
+  switch (err.kind) {
+    case "network":
+      return "Try again in a minute. If it keeps failing, Checkbook NYC may be down.";
+    case "redirect":
+      return "Wait several minutes before trying again, and do not repeat the call right away.";
+    case "http":
+      if (err.status === 403) {
+        return "A 403 from Checkbook NYC usually means this network is blocked for sending requests too fast. " +
+          "Stop calling it for a while: each extra request extends the block.";
+      }
+      return (err.status ?? 0) >= 500
+        ? "Checkbook NYC had a problem. Try again in a few minutes."
+        : "Check the values sent against the tool's parameter descriptions.";
+    case "api":
+      return "Check each value against the tool's parameter descriptions; the API's own message is below.";
+    case "silent-empty":
+      return "Try different filters, for example without fiscal_year or with a date range.";
+    default:
+      return "";
+  }
 }
+
+/** Every failure, as an isError result: what went wrong, what to try, and the API's own
+ * words cut to 500 characters (toolError from the shared module, #57). No stack traces. */
+export function failure(err: unknown): CallToolResult {
+  if (err instanceof CheckbookApiError) {
+    const msg = [err.message, whatToTry(err)].filter(Boolean).join(" ");
+    return toolError(msg, { upstreamBody: err.upstream }) as CallToolResult;
+  }
+  // Our own guidance (a refused input) is already a sentence that says what to do. Anything
+  // else is a bug in this server.
+  const message = err instanceof Error ? err.message : String(err);
+  return toolError(
+    err instanceof GuidanceError
+      ? message
+      : `The tool failed: ${message}. Try again; if it keeps failing, report it at ${ISSUES_URL}`
+  ) as CallToolResult;
+}
+
+/** An input this server refuses on purpose, with guidance (not a bug). */
+export class GuidanceError extends Error {}
 
 async function guard(fn: () => Promise<CallToolResult>): Promise<CallToolResult> {
   try {
     return await fn();
   } catch (err) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error: ${err instanceof Error ? err.message : String(err)}`,
-        },
-      ],
-      isError: true,
-    };
+    return failure(err);
   }
 }
 
@@ -660,20 +693,11 @@ function registerCheckbookTools(server: McpServer): void {
         // Hard-gate (issue #25): do not touch the unsupported endpoint unless the
         // operator has explicitly opted in. Fail fast BEFORE any network call.
         if (!smartSearchEnabled()) {
-          return errorResult({
-            query,
-            available: false,
-            reason: SMART_SEARCH_DISABLED_MESSAGE,
-          });
+          throw new GuidanceError(SMART_SEARCH_DISABLED_MESSAGE);
         }
         const result = await smartSearch(query, limit ?? 25);
         if (!result.available) {
-          return errorResult({
-            query,
-            available: false,
-            reason: result.reason,
-            fallback: result.fallback,
-          });
+          throw new GuidanceError(`Smart search is not available: ${result.reason}. ${result.fallback ?? ""}`.trim());
         }
         return textResult({
           query,
@@ -826,12 +850,12 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() => {
         if (input.vendor_name) {
-          throw new Error(VENDOR_NAME_UNSUPPORTED_MESSAGE);
+          throw new GuidanceError(VENDOR_NAME_UNSUPPORTED_MESSAGE);
         }
         const criteria = contractsCriteria(input);
         if (isRegisteredRevenueFiscalYear(criteria)) {
           // Fail fast, no network call (#42 upstream limitation).
-          throw new Error(REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE);
+          throw new GuidanceError(REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE);
         }
         return runSearch(
           "Contracts",
@@ -922,7 +946,7 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() => {
         if (!input.fiscal_year && !input.issue_date_from) {
-          throw new Error("Either fiscal_year or issue_date_from is required.");
+          throw new GuidanceError("Either fiscal_year or issue_date_from is required. Give one, for example fiscal_year=\"2026\".");
         }
         const criteria = valueCriteria(input, {
           fiscal_year: "fiscal_year",
@@ -1013,7 +1037,7 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() => {
         if (!input.fiscal_year && !input.calendar_year) {
-          throw new Error("Either fiscal_year or calendar_year is required.");
+          throw new GuidanceError("Either fiscal_year or calendar_year is required. Give one, for example fiscal_year=\"2026\".");
         }
         const criteria = valueCriteria(input, {
           fiscal_year: "fiscal_year",

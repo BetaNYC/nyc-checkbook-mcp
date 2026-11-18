@@ -73,6 +73,14 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   `access_challenge`, `empty_body` or `unparseable`, each from a marker seen in a real
   reply), what to try, the HTTP status, `Content-Type`, length and the first 300 characters,
   and that this is not "no records". Still not retried.
+- Every failure goes through the shared module's `toolError` (#57): a plain sentence on what
+  went wrong and what to try (by kind: network, redirect, 403 block, other HTTP status, API
+  refusal, silent empty, non-XML reply), the API's own message cut to 500 characters, no
+  stack trace. Refused inputs (vendor name, revenue with fiscal year, a missing year,
+  `smart_search` while off) are plain guidance instead of JSON. A bug in the server says
+  where to report it. `CheckbookApiError` carries the API's words in `upstream`.
+- The 60 s request timeout now has its reason written next to it (#51): a timeout is
+  retried, and a retry re-sends a slow query to an edge that blocks bursts.
 - `npm run check:columns -- <relative path>` reads the path from where npm was run
   (`INIT_CWD`), not the package root (#43c).
 - `scripts/probe-api-spec.sh` keeps every `<description>` in a reply, one per line, instead
@@ -95,6 +103,10 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   title (#50).
 - `test/tool-size.test.mjs`: `tools/list` plus the instructions stay within 24,000
   characters (23,122 measured 2026-11-18), the nyc-311-mcp measure (#56).
+- `test/errors.test.mjs`: network error, 403, 503, a 2,000-character API refusal and a
+  non-XML reply through a tool, plus refused inputs and an unexpected error: each is
+  `isError`, says what to try, has no stack frame and at most 500 characters of upstream
+  text (#57). `test/http-client.test.mjs` reads the API's words from `err.upstream`.
 - `test/agency-codes.test.mjs`: every agency code in the README table, the README examples
   and the tool descriptions is one checked against Checkbook NYC, with its own agency (#37).
 - `test/non-xml-reply.test.mjs`: each reply kind from its recorded sample, the evidence, "not

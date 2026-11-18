@@ -407,6 +407,8 @@ The NYC Comptroller's office publishes these limits for the Checkbook NYC API. B
 
 **Exceeding the rate limit has consequences beyond a throttle.** The API sits behind an Imperva edge that will place a client into a blocked state that persists well past the burst that caused it, and presents as an HTTP 403 on every subsequent request, including from an ordinary browser on the same network. If you fork this server or write your own client, pace your requests.
 
+Each request times out after 60 seconds, and only network errors and HTTP 5xx replies are retried (at most 3 attempts, with growing waits, honoring `Retry-After`). The timeout is longer than usual on purpose: a timed-out request would be retried, re-sending a slow query to an edge that blocks bursts.
+
 This server also declines to follow HTTP redirects. A redirect chain is followed inside a single `fetch()` call, where rate pacing cannot reach it, so one logical API call can arrive at the origin as dozens of requests.
 
 ### Other notes
