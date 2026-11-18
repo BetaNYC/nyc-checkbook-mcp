@@ -102,6 +102,44 @@ for (const status of [429, 403]) {
   });
 }
 
+test("#51 a call that arrives while the block page is still being read gets the incident ID too", async () => {
+  let calls = 0;
+  let sendBody;
+  const bodyArrives = new Promise((r) => (sendBody = r));
+  let fetched;
+  const fetchCalled = new Promise((r) => (fetched = r));
+  await withFetch(
+    async () => {
+      calls++;
+      fetched();
+      // Headers now, the body later: a slow network, or a slow CI machine.
+      const body = new ReadableStream({
+        async start(c) {
+          await bodyArrives;
+          c.enqueue(new TextEncoder().encode(BLOCK_PAGE));
+          c.close();
+        },
+      });
+      return new Response(body, { status: 429 });
+    },
+    async () => {
+      const first = callCheckbookApi({ type_of_data: "Budget" });
+      await fetchCalled;
+      for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+      const late = callCheckbookApi({ type_of_data: "Spending" }); // arrives mid-body
+      for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+      sendBody();
+      await assert.rejects(first, { kind: "refused" });
+      await assert.rejects(late, (err) => {
+        assert.equal(err.kind, "locked");
+        assert.match(err.message, new RegExp(`incident ID ${INCIDENT}`));
+        return true;
+      });
+    }
+  );
+  assert.equal(calls, 1);
+});
+
 test("#51 the lock has no timer: hours later, still locked and still nothing sent", async () => {
   await withFetch(
     async () => new Response(BLOCK_PAGE, { status: 429 }),

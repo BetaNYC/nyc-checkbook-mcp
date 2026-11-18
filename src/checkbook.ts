@@ -506,12 +506,13 @@ export async function fetchWithRetry(
           lastError = err; // network error or per-request timeout: retryable
           lastResponse = undefined;
         }
-        // Lock BEFORE the turn ends, so no request queued behind this one is sent, and with the
-        // incident ID, which every later locked error repeats. Read from a copy, so the caller
-        // can still read the body.
+        // Lock BEFORE the turn ends, so no request queued behind this one is sent. Read the
+        // incident ID first (from a copy, so the caller can still read the body) and lock in one
+        // step, so every locked error, even one for a call that arrives meanwhile, repeats it.
+        // Nothing else can be sent while this turn is held.
         if (response && (response.status === 403 || response.status === 429)) {
-          lockUpstream(response.status);
-          lockUpstream(response.status, incidentId(await response.clone().text().catch(() => "")));
+          const id = incidentId(await response.clone().text().catch(() => ""));
+          lockUpstream(response.status, id);
         }
       }
     } finally {

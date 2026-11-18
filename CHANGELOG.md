@@ -151,7 +151,8 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   call a day later send nothing; a block on any path locks every path; the three tools that
   never use the network still answer; the reset seam refuses to run outside the test runner;
   two different tool calls at once start their requests 1.1 s after the first finished; a
-  retry that waited in the queue past 120 s is not sent.
+  retry that waited in the queue past 120 s is not sent; a call that arrives while the block
+  page is still being read still gets the incident ID.
 - `test/pace.test.mjs` runs on a virtual clock (`test/helpers/upstream.mjs`) with no timer
   slack, so a pacer at 1,050 ms or one pacer per call fails it; one real-clock test checks
   the monotonic clock while the wall clock jumps.
