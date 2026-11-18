@@ -81,6 +81,12 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   where to report it. `CheckbookApiError` carries the API's words in `upstream`.
 - The 60 s request timeout now has its reason written next to it (#51): a timeout is
   retried, and a retry re-sends a slow query to an edge that blocks bursts.
+- A 403 or 429 is never retried, even with `Retry-After`, and its error says to stop, wait
+  and report, with the Incapsula incident ID when the reply shows one (#51, new error kind
+  `refused`). This follows the Comptroller's office's stated limits (1 request per second
+  per IP address for POST `/api`, 20,000 records per call, a block for going over). The
+  retry policy is one table in the README and in `src/checkbook.ts`. Smart search: a 3xx is
+  never a result, and a 403 or 429 gives the same answer without suggesting other tools.
 - `npm run check:columns -- <relative path>` reads the path from where npm was run
   (`INIT_CWD`), not the package root (#43c).
 - `scripts/probe-api-spec.sh` keeps every `<description>` in a reply, one per line, instead
@@ -103,6 +109,10 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   title (#50).
 - `test/tool-size.test.mjs`: `tools/list` plus the instructions stay within 24,000
   characters (23,122 measured 2026-11-18), the nyc-311-mcp measure (#56).
+- `test/rate-limits.test.mjs` (#51): a 403 or 429 with `Retry-After` is one request with
+  no retry, and its error says stop and report with the incident ID; a timed-out and a 5xx
+  attempt are each retried at least 1.1 s after the one before; the default policy retries
+  at most twice, and a timeout at most once; no tool asks for more than 20,000 records.
 - `test/errors.test.mjs`: network error, 403, 503, a 2,000-character API refusal and a
   non-XML reply through a tool, plus refused inputs and an unexpected error: each is
   `isError`, says what to try, has no stack frame and at most 500 characters of upstream

@@ -81,7 +81,7 @@ export interface ApiSuccess {
  */
 export class CheckbookApiError extends Error {
   readonly status?: number;
-  readonly kind: "network" | "redirect" | "http" | "api" | "silent-empty" | ReplyKind;
+  readonly kind: "network" | "redirect" | "refused" | "http" | "api" | "silent-empty" | ReplyKind;
   /** The API's own words, passed on to the caller cut to 500 characters (toolError, #57). */
   readonly upstream?: string;
   constructor(message: string, opts: { status?: number; kind: CheckbookApiError["kind"]; upstream?: string }) {
@@ -188,12 +188,29 @@ const USER_AGENT = `betanyc-checkbook-mcp/${VERSION} (github.com/BetaNYC/nyc-che
 // blocks clients for bursts (1 req/sec; see pace()). One page can be up to 20,000 records of
 // XML, and Checkbook's own database cancels slow queries itself (SQLSTATE 57014, #39), so a
 // short client timeout would mostly turn slow answers into extra requests.
+//
+// Retry policy (#51). We follow the Comptroller's office's stated limits: 1 request per
+// second per IP address for POST /api, at most 20,000 records per call, and a block (not a
+// throttle) for going over. So:
+//
+//   Reply                       Retried?
+//   2xx                         no, it is the answer
+//   3xx                         no, never followed, returned as an error (#23)
+//   403, 429                    NEVER, not even once, not even with Retry-After (#51)
+//   other 4xx                   no, it is an answer (#24)
+//   5xx                         yes, up to 2 retries, backoff or Retry-After
+//   network error / timeout     yes, up to 2 retries, backoff
+//
+// Every attempt, first or retry, waits its turn in pace(): at least 1.1 s after the previous
+// request started, process-wide. No new attempt starts after 120 s (deadlineMs), so with a
+// 60 s timeout a timed-out request is retried at most once.
 const REQUEST_TIMEOUT_MS = 60_000;
 
 // ─── Rate pacing ─────────────────────────────────────────────────────────────
 
-// The Comptroller's office rate-limits this API to 1 request per second
-// (confirmed by their team, 2026-07-28; documented nowhere on checkbooknyc.com).
+// The Comptroller's office rate-limits this API to 1 request per second, per IP address,
+// for POST requests to /api (confirmed by their team on 2026-07-28 and in writing on
+// 2026-07-31; documented nowhere on checkbooknyc.com).
 // Exceeding it does not throttle: their Imperva edge places the client into a
 // blocked state that persists past the burst and returns 403 to every client on
 // that IP, a browser included.
@@ -211,10 +228,9 @@ let lastRequestAt = 0;
  * MIN_REQUEST_INTERVAL_MS apart, process-wide. Awaited before each fetch,
  * including retries, so no code path can burst.
  *
- * KNOWN LIMITATION (issue #28): per-process only. Two clients running at once
- * can still exceed the limit, and no in-process fix addresses that. Whether it
- * matters depends on whether the limit is scoped per IP or per client, which is
- * an open question for the Comptroller's office.
+ * KNOWN LIMITATION (issue #28): per-process only. The limit is per IP address
+ * (the Comptroller's office, 2026-07-31), so two copies of this server on one
+ * network can still exceed it together, and no in-process fix addresses that.
  */
 async function schedule(): Promise<void> {
   const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
@@ -334,7 +350,9 @@ export function parseRetryAfterMs(
  *   but now with equal-jitter exponential backoff, an attempt cap, and an overall
  *   deadline. Immediate zero-backoff retry is exactly the pattern the API
  *   operator named as their block trigger.
- * - NEVER retries a 4xx — 403 is an answer, not a transient failure.
+ * - NEVER retries a 4xx — 403 is an answer, not a transient failure. A 403 or
+ *   429 is never retried even when it carries Retry-After (#51): going over the
+ *   Comptroller's limit gets the whole network blocked, so we stop.
  * - Honors `Retry-After` on a retryable 5xx when present.
  *
  * Returns the terminal Response (2xx, 4xx, or an unfollowed 3xx/5xx); the caller
@@ -486,6 +504,28 @@ export function nonXmlReplyError(status: number, contentType: string | null, bod
   );
 }
 
+const REPORT_URL = "https://github.com/BetaNYC/nyc-checkbook-mcp/issues";
+
+/** The Incapsula incident ID on a block page, if it shows one: the Comptroller's office
+ * can look it up, so it goes in the report. */
+export function incidentId(body: string): string | undefined {
+  return /incident[ _]id\s*[:=]\s*(\d+(?:-\d+)*)/i.exec(body)?.[1];
+}
+
+/** The answer to a 403 or 429 (#51). It says stop and report, and never invites a retry:
+ * going over the Comptroller's limit blocks the whole network, and more requests can make
+ * the block last longer. */
+export function refusedMessage(status: number, body = ""): string {
+  const id = incidentId(body);
+  return (
+    `Checkbook NYC has ${status === 429 ? "rate-limited" : "refused"} requests from this network ` +
+    `(HTTP ${status}). This is not "no records". Do not ask Checkbook NYC again now: it blocks a ` +
+    `network that sends too many requests, and each new request can make the block last longer. ` +
+    `Stop using these tools for a while, and report it at ${REPORT_URL}` +
+    (id ? ` with the Incapsula incident ID ${id}.` : ".")
+  );
+}
+
 /**
  * Call the Checkbook XML API. Returns records on success; THROWS
  * {@link CheckbookApiError} on any failure (issue #21) — never a zero-count
@@ -515,6 +555,11 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiSuccess> {
       `Checkbook NYC returned an unexpected redirect (HTTP ${response.status || "opaque"}) which this client does not follow; the endpoint is likely behind a WAF/interstitial. This is an error, not an empty result set.`,
       { status: response.status, kind: "redirect" }
     );
+  }
+
+  if (response.status === 403 || response.status === 429) {
+    const text = await response.text().catch(() => "");
+    throw new CheckbookApiError(refusedMessage(response.status, text), { status: response.status, kind: "refused" });
   }
 
   if (!response.ok) {
@@ -568,7 +613,9 @@ export function classifySmartSearchResponse(
   status: number,
   html: string
 ): { usable: boolean; reason?: string } {
-  if (status >= 400) {
+  if (status === 403 || status === 429) return { usable: false, reason: refusedMessage(status, html) };
+  if (status >= 300) {
+    // A 3xx is never followed (#23) and never a result.
     return { usable: false, reason: `HTTP ${status} (WAF challenge or error)` };
   }
   if (/_Incapsula_Resource|Incapsula incident ID/i.test(html)) {
@@ -628,7 +675,8 @@ export async function smartSearch(
       total: 0,
       results: [],
       reason: check.reason,
-      fallback: SMART_SEARCH_UNAVAILABLE_FALLBACK,
+      // After a 403 or 429, no "try these other tools": they call the same site (#51).
+      fallback: status === 403 || status === 429 ? undefined : SMART_SEARCH_UNAVAILABLE_FALLBACK,
     };
   }
 

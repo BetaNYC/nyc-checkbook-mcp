@@ -53,11 +53,9 @@ function whatToTry(err: CheckbookApiError): string {
       return "Try again in a minute. If it keeps failing, Checkbook NYC may be down.";
     case "redirect":
       return "Wait several minutes before trying again, and do not repeat the call right away.";
+    case "refused":
+      return ""; // refusedMessage already says stop, wait and report (#51)
     case "http":
-      if (err.status === 403) {
-        return "A 403 from Checkbook NYC usually means this network is blocked for sending requests too fast. " +
-          "Stop calling it for a while: each extra request extends the block.";
-      }
       return (err.status ?? 0) >= 500
         ? "Checkbook NYC had a problem. Try again in a few minutes."
         : "Check the values sent against the tool's parameter descriptions.";
@@ -697,7 +695,7 @@ function registerCheckbookTools(server: McpServer): void {
         }
         const result = await smartSearch(query, limit ?? 25);
         if (!result.available) {
-          throw new GuidanceError(`Smart search is not available: ${result.reason}. ${result.fallback ?? ""}`.trim());
+          throw new GuidanceError(`Smart search is not available: ${result.reason?.replace(/\.$/, "")}. ${result.fallback ?? ""}`.trim());
         }
         return textResult({
           query,
