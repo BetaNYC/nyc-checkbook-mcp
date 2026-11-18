@@ -466,6 +466,7 @@ npm run build
 | `npm run dev` | Compile in watch mode |
 | `npm test` | Build, then run the test suite |
 | `npm run check:columns` | Build, then check every default response-column list, per call shape, against `probe-results.txt` (no network; see [scripts/README.md](scripts/README.md)) |
+| `npm run eval` | Build, then ask the evaluation set's questions offline and write `eval/runs/YYYY-MM-DD.json` (see below) |
 | `npm start` | Run the built server |
 
 ### Testing
@@ -477,6 +478,16 @@ Three areas carry tests worth knowing about before you change them:
 - **`test/pace.test.mjs`** guards the rate limiter, including the case where several callers are in flight at once. If you change how requests are dispatched, these are the tests that catch a regression into bursting.
 - **`test/strict-schema.test.mjs`** asserts that unknown tool parameters are rejected rather than silently dropped.
 - **`test/check-default-columns.test.mjs`** tests the default-column checker against a recorded probe snapshot. It proves the checker works, not that the columns are valid today. Only a fresh probe run can show that (see Releases).
+
+Live tests, if any are ever added, go in `test/live/`. `npm test` and CI run `test/*.test.mjs` only, so they never run by default.
+
+### Evaluation set
+
+`eval/questions.json` holds 14 questions people ask of Checkbook data (Parks' budget lines, a vendor's contracts by name, NYPD's spending, subcontractors on DOT contracts, …), each with a known right answer, written before scoring. Each runs offline against a recorded reply: the answer is what the server must send and say, for example that a vendor-name search is refused with guidance and sends no request, or that a database timeout is not "no records". `npm run eval` scores them and saves the result in `eval/runs/`; `test/eval.test.mjs` runs the same questions in `npm test`. A failing question is a bug or a wrong expectation, never a skip: `eval/runs/2026-11-18-first-run.txt` records the one expectation corrected after the first run.
+
+### Server instructions
+
+Text several tools share (agency code examples, the fiscal year, vendor names, contract field names) is in the server instructions once (`CHECKBOOK_GUIDE` in `src/betanyc.ts`), not in each tool description. `test/instructions.test.mjs` fails if it is repeated in a tool, and `test/tool-size.test.mjs` caps the size of the tool list plus the instructions. `test/stdout.test.mjs` checks that the server writes nothing but protocol to stdout.
 
 ### Source layout
 

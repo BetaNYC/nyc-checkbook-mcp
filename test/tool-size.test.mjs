@@ -6,6 +6,8 @@
 // every tool); the budget is that plus about 4%. If a change needs more, raise it on purpose
 // with a dated line here saying why, and put text several tools share in the server
 // instructions rather than in each description.
+// 2026-11-18, #59: shared text moved from the descriptions into the instructions, which also
+// gained the fiscal-year rule and checked agency-code examples; 23,532 characters, budget kept.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

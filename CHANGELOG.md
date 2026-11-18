@@ -87,6 +87,13 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
 - Every list answer has a `showing` sentence: which records it holds, of how many, and which
   `page` to ask for next (#54). `get_contract` returns `total_records` and says when a
   contract has more than the 10 rows it shows, and how to get all of them.
+- Text several tools shared (vendor-name guidance, contract field names per shape, agency
+  code examples) moved from the tool and parameter descriptions into the server instructions,
+  once (`CHECKBOOK_GUIDE` in `src/betanyc.ts`), with the NYC fiscal-year rule (#59). The
+  shared about_data paragraph is unchanged.
+- An evaluation set: `eval/questions.json`, 14 questions with known answers, run offline
+  against recorded replies by `npm run eval` (results in `eval/runs/`) and by
+  `test/eval.test.mjs` (#55).
 - The 60 s request timeout now has its reason written next to it (#51): a timeout is
   retried, and a retry re-sends a slow query to an edge that blocks bursts.
 - `npm run check:columns -- <relative path>` reads the path from where npm was run
@@ -119,8 +126,13 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   and a retrieval as-of from `DATA-SOURCES.json`; a 19,139-record result says "Showing
   records 1 to 50 of 19,139" and the next page; the last page, no matches, a page past the
   end; `get_contract` with more rows than it shows (#52, #53, #54).
+- `test/instructions.test.mjs`: the shared guidance is in the instructions, once, and in no
+  tool or parameter description (#59). `test/stdout.test.mjs`: the built server, started over
+  stdio, writes only JSON-RPC lines to stdout (#58). `test/eval.test.mjs`: every evaluation
+  question passes (#55).
 - `test/agency-codes.test.mjs`: every agency code in the README table, the README examples
-  and the tool descriptions is one checked against Checkbook NYC, with its own agency (#37).
+  the tool descriptions and the server instructions is one checked against Checkbook NYC,
+  with its own agency (#37).
 - `test/non-xml-reply.test.mjs`: each reply kind from its recorded sample, the evidence, "not
   no records", no retry, and the tool result has no zero count (#39).
 - `test/check-default-columns.test.mjs`: a relative path resolves against `INIT_CWD` (#43c).

@@ -10,6 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerTools } from "../dist/tools.js";
+import { SERVER_INSTRUCTIONS } from "../dist/betanyc.js";
 
 const CHECKED = {
   "002": /Mayoralty/,
@@ -43,14 +44,14 @@ test("#37 the README's agency table names only checked codes, each with its own 
   }
 });
 
-test("#37 every agency code example in the tool descriptions is a checked code", async () => {
+test("#37 every agency code example in the tool descriptions and the server instructions is a checked code", async () => {
   const server = new McpServer({ name: "nyc-checkbook-mcp", version: "0" });
   registerTools(server);
   const client = new Client({ name: "test-client", version: "0" });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(st), client.connect(ct)]);
   try {
-    const text = JSON.stringify((await client.listTools()).tools);
+    const text = JSON.stringify((await client.listTools()).tools) + SERVER_INSTRUCTIONS;
     const examples = [...text.matchAll(/'(\d{3})' for ([A-Za-z/]+)/g)];
     assert.ok(examples.length > 0);
     for (const [, code, name] of examples) assertChecked(code, name, "tool description");

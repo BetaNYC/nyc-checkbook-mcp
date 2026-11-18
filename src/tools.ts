@@ -237,7 +237,10 @@ const pageSizeSchema = z
   .default(50)
   .describe("Results per page (default: 50, max: 20000)");
 const fiscalYearSchema = z.string().optional().describe("Fiscal year, e.g. '2024'");
-const agencyCodeSchema = z.string().optional().describe("3-digit agency code");
+// Agency codes, vendor names, contract field names and the fiscal year are explained once,
+// in the server instructions (src/betanyc.ts, CHECKBOOK_GUIDE), not in each tool (#59).
+const AGENCY_CODE = "3-digit agency code (examples in the server instructions)";
+const agencyCodeSchema = z.string().optional().describe(AGENCY_CODE);
 
 // ─── Contracts criteria (exported for tests) ─────────────────────────────────
 
@@ -760,9 +763,7 @@ function registerCheckbookTools(server: McpServer): void {
       description:
         "Search NYC registered and pending contracts with structured filters. " +
         "Filter by agency, vendor_code, contract ID, date range, amount range, industry, MWBE category, and more. " +
-        "NOTE: the contracts API has NO vendor-name filter — vendors are filtered only by vendor_code. " +
-        "To find contracts by vendor NAME, use search_spending (payee_name) for checks paid to a named vendor. " +
-        "Many contracts are held by resellers, so a product/software name may not match the contract's own vendor. " +
+        "No vendor-name filter: see the server instructions on vendor names. " +
         "KNOWN API LIMITATION: registered revenue contracts (category 'revenue') with fiscal_year return no rows " +
         "from Checkbook NYC (a match count, no records), so the tool refuses that combination without sending a request; omit fiscal_year and filter by dates instead.",
       inputSchema: strictSchema({
@@ -776,25 +777,20 @@ function registerCheckbookTools(server: McpServer): void {
           .optional()
           .default("expense")
           .describe(
-            "Contract category (default: expense). Record field names follow the API's own " +
-              "domain and differ by shape: registered expense/all use prime_contract_* names " +
-              "(prime_contract_id, prime_contract_purpose, ...); registered revenue and every " +
-              "pending search use plain names (contract_id, purpose, agency, ...). Records are " +
-              "returned as the API sends them, not normalized."
+            "Contract category (default: expense). Field names differ by status and category " +
+              "(server instructions)."
           ),
         fiscal_year: fiscalYearSchema,
         agency_code: z
           .string()
           .optional()
-          .describe("3-digit agency code, e.g. '858' for OTI/DoITT, '841' for DOT"),
+          .describe(AGENCY_CODE),
         vendor_name: z
           .string()
           .optional()
           .describe(
-            "NOT SUPPORTED as a contracts filter — the Checkbook API has no vendor-name " +
-              "parameter and no name→code lookup. Supplying this returns actionable guidance " +
-              "(use vendor_code, or search_spending with payee_name for name search). " +
-              "Prefer vendor_code."
+            "NOT SUPPORTED: the contracts API has no vendor-name filter. Use vendor_code " +
+              "(server instructions on vendor names)."
           ),
         vendor_code: z.string().optional().describe("Vendor identification code (the only vendor filter for contracts)"),
         contract_id: z
@@ -920,8 +916,7 @@ function registerCheckbookTools(server: McpServer): void {
       description:
         "Look up a single NYC contract by its contract ID. Returns full contract details. " +
         "Use this after finding a contract ID via search_contracts or search_spending. " +
-        "Field names follow status/category, as in search_contracts: registered expense uses " +
-        "prime_contract_* names, registered revenue and pending use plain names (contract_id, purpose, ...).",
+        "Field names differ by status and category (server instructions).",
       inputSchema: strictSchema({
         contract_id: z
           .string()
@@ -1078,7 +1073,7 @@ function registerCheckbookTools(server: McpServer): void {
         agency_code: z
           .string()
           .optional()
-          .describe("3-digit agency code, e.g. '846' for Parks"),
+          .describe(AGENCY_CODE),
         title: z.string().optional().describe("Job title (partial match)"),
         pay_frequency: z
           .string()
@@ -1166,7 +1161,7 @@ function registerCheckbookTools(server: McpServer): void {
       inputSchema: strictSchema({
         agency_code: z
           .string()
-          .describe("3-digit agency code, e.g. '858' for OTI/DoITT, '056' for NYPD"),
+          .describe(AGENCY_CODE),
         fiscal_year: z.string().describe("Fiscal year, e.g. '2024'"),
         page: pageSchema,
         page_size: pageSizeSchema,
