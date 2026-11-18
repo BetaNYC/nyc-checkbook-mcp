@@ -711,7 +711,7 @@ function registerCheckbookTools(server: McpServer): void {
         agency_code: z
           .string()
           .optional()
-          .describe("3-digit agency code, e.g. '858' for OTI/DoITT, '002' for DoF"),
+          .describe("3-digit agency code, e.g. '858' for OTI/DoITT, '841' for DOT"),
         vendor_name: z
           .string()
           .optional()
@@ -1071,7 +1071,7 @@ function registerCheckbookTools(server: McpServer): void {
       inputSchema: strictSchema({
         agency_code: z
           .string()
-          .describe("3-digit agency code, e.g. '858' for OTI/DoITT, '040' for NYPD"),
+          .describe("3-digit agency code, e.g. '858' for OTI/DoITT, '056' for NYPD"),
         fiscal_year: z.string().describe("Fiscal year, e.g. '2024'"),
         page: pageSchema,
         page_size: pageSizeSchema,

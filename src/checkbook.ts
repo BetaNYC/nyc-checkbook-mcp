@@ -56,6 +56,8 @@ interface ApiResponse {
   total_records: number;
   records: Record<string, unknown>[];
   error?: string;
+  /** True when the body is not the API's XML <response> at all (issue #39). */
+  notApiXml?: boolean;
 }
 
 /**
@@ -79,7 +81,7 @@ export interface ApiSuccess {
  */
 export class CheckbookApiError extends Error {
   readonly status?: number;
-  readonly kind: "network" | "redirect" | "http" | "api" | "silent-empty";
+  readonly kind: "network" | "redirect" | "http" | "api" | "silent-empty" | ReplyKind;
   constructor(message: string, opts: { status?: number; kind: CheckbookApiError["kind"] }) {
     super(message);
     this.name = "CheckbookApiError";
@@ -123,7 +125,7 @@ export function parseResponse(xmlText: string): ApiResponse {
     const response = parsed?.response;
 
     if (!response) {
-      return { success: false, total_records: 0, records: [], error: "Empty response" };
+      return { success: false, total_records: 0, records: [], error: "Empty response", notApiXml: true };
     }
 
     const status = response?.status?.result;
@@ -167,6 +169,7 @@ export function parseResponse(xmlText: string): ApiResponse {
       total_records: 0,
       records: [],
       error: `Parse error: ${err instanceof Error ? err.message : String(err)}`,
+      notApiXml: true,
     };
   }
 }
@@ -417,6 +420,64 @@ export function assertNotSilentEmpty(
   }
 }
 
+// ─── Replies that are not the API's XML (issue #39) ─────────────────────────
+
+/**
+ * What a reply that is not the API's XML most likely was. Each marker below was
+ * seen in a real reply; none is guessed.
+ *
+ *   server_timeout        "SQLSTATE[57014] ... canceling statement due to statement
+ *                         timeout", 87-byte plain-text body, HTTP 200 (captured
+ *                         2026-10-23, #39 comment; fixture sqlstate-timeout.txt).
+ *   api_rejected_request  "is not of data type", the API's plain-text answer to a
+ *                         non-numeric contract_includes_sub_vendors (live,
+ *                         2026-07-28, #8). Only that phrase was recorded.
+ *   access_challenge      Imperva/Incapsula markers (fixture
+ *                         smart-search-incapsula-403.html, 2026-07-06), or HTML where
+ *                         XML was expected (the 212-byte page seen 2026-10-14, #39).
+ *   empty_body            0 bytes.
+ *   unparseable           anything else.
+ */
+export type ReplyKind = "server_timeout" | "api_rejected_request" | "access_challenge" | "empty_body" | "unparseable";
+
+const REPLY_MEANING: Record<ReplyKind, string> = {
+  server_timeout:
+    "Checkbook NYC's database gave up on the query (a statement timeout). Try a narrower search, " +
+    "for example a shorter payee_name, or add a fiscal_year or date range.",
+  api_rejected_request:
+    "The API rejected a value in the request. Check each value against the tool's parameter descriptions.",
+  access_challenge:
+    "This looks like a web page from the site's bot check, not an API reply. Stop calling Checkbook NYC " +
+    "for a while: more requests can extend a block.",
+  empty_body: "The reply was empty. The cause is not known.",
+  unparseable: "The cause is not known.",
+};
+
+/** Most characters of a non-XML reply kept as evidence. */
+export const REPLY_EXCERPT_MAX = 300;
+
+export function classifyReply(contentType: string | null, body: string): ReplyKind {
+  if (body.length === 0) return "empty_body";
+  if (/SQLSTATE\[57014\]|canceling statement due to statement timeout/.test(body)) return "server_timeout";
+  if (/is not of data type/.test(body)) return "api_rejected_request";
+  if (/_Incapsula_Resource|Incapsula incident ID/i.test(body)) return "access_challenge";
+  if (/text\/html/i.test(contentType ?? "") || /^\s*(<!doctype html|<html)/i.test(body)) return "access_challenge";
+  return "unparseable";
+}
+
+/** The error for a reply that is not the API's XML: what it most likely was, and the evidence. */
+export function nonXmlReplyError(status: number, contentType: string | null, body: string): CheckbookApiError {
+  const kind = classifyReply(contentType, body);
+  // Control characters stripped so the excerpt reads as one line of text.
+  const excerpt = [...body.replace(/[\u0000-\u001f\u007f]+/g, " ").trim()].slice(0, REPLY_EXCERPT_MAX).join("");
+  return new CheckbookApiError(
+    `Checkbook NYC did not return data, so this is not "no records". The reply was not the API's XML ` +
+      `(${kind}): ${REPLY_MEANING[kind]} HTTP ${status}, Content-Type ${contentType || "none"}, ` +
+      `${Buffer.byteLength(body)} bytes.` + (excerpt ? ` Start of the reply: "${excerpt}"` : ""),
+    { status, kind }
+  );
+}
+
 /**
  * Call the Checkbook XML API. Returns records on success; THROWS
  * {@link CheckbookApiError} on any failure (issue #21) — never a zero-count
@@ -455,7 +516,11 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiSuccess> {
     );
   }
 
-  const parsed = parseResponse(await response.text());
+  const text = await response.text();
+  const parsed = parseResponse(text);
+  // Not retried (#39): one request is how we learn what the reply was, and a second
+  // spends the 1 req/sec budget on a reply we cannot use.
+  if (parsed.notApiXml) throw nonXmlReplyError(response.status, response.headers.get("content-type"), text);
   if (!parsed.success) {
     throw new CheckbookApiError(parsed.error ?? "Unknown Checkbook API error", { kind: "api" });
   }

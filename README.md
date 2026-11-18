@@ -102,7 +102,7 @@ Search registered or pending NYC contracts with structured filters.
 | `contract_type` | string | no | — | Contract type code |
 | `include_sub_vendors` | boolean | no | `false` | Append sub-vendor / subcontractor detail columns (`sub_vendor`, `sub_vendor_mwbe_category`, `sub_contract_current_amount`, …) to the response. Registered `expense` or `all` only; ignored for `pending` and for `category="revenue"`, whose domains list no sub-vendor columns. |
 | `page` | number | no | `1` | Pagination |
-| `page_size` | number | no | `50` | Results per page (max 1000) |
+| `page_size` | number | no | `50` | Results per page (max 20000) |
 
 **Known API limitation:** registered `revenue` searches with `fiscal_year` return no rows. Checkbook NYC reports a match count but sends no records, whatever columns are requested (live, 2026-10-16). The tool refuses that combination with an error and guidance, without sending a request. Search without `fiscal_year` and narrow by date range instead.
 
@@ -162,7 +162,7 @@ Search NYC spending records (checks issued to vendors).
 | `spending_category` | string | no | — | `"c"` capital, `"e"` expense |
 | `mwbe_category` | string | no | — | M/WBE category code |
 | `page` | number | no | `1` | Pagination |
-| `page_size` | number | no | `50` | Results per page (max 1000) |
+| `page_size` | number | no | `50` | Results per page (max 20000) |
 
 *Either `fiscal_year` or `issue_date_from` is required (enforced).
 
@@ -244,7 +244,7 @@ All spending for a specific agency in a fiscal year.
 
 ```
 get_agency_spending("858", "2025")   // OTI/DoITT
-get_agency_spending("040", "2025")   // NYPD
+get_agency_spending("056", "2025")   // NYPD
 ```
 
 ---
@@ -271,7 +271,7 @@ Results carry `apt_pin` only when you do **not** filter by `fiscal_year`. The AP
 | `start_date_from` / `start_date_to` | string | no | — | YYYY-MM-DD |
 | `end_date_from` / `end_date_to` | string | no | — | YYYY-MM-DD |
 | `page` | number | no | `1` | Pagination |
-| `page_size` | number | no | `50` | Results per page (max 1000) |
+| `page_size` | number | no | `50` | Results per page (max 20000) |
 
 ---
 
@@ -300,7 +300,7 @@ Search NYCHA (New York City Housing Authority) contracts (Checkbook domain `Cont
 | `end_date_from` / `end_date_to` | string | no | — | YYYY-MM-DD |
 | `approved_date_from` / `approved_date_to` | string | no | — | Release approved date range (YYYY-MM-DD) |
 | `page` | number | no | `1` | Pagination |
-| `page_size` | number | no | `50` | Results per page (max 1000) |
+| `page_size` | number | no | `50` | Results per page (max 20000) |
 
 ---
 
@@ -322,21 +322,22 @@ Natural-language questions this MCP can answer today, by persona:
 
 ## Common agency codes
 
+Each code below is the agency Checkbook NYC itself returned for it (one `search_budget` call per code, 2026-10-12 and 13, #37). Check a code you do not see here the same way: `search_budget(agency_code="…", page_size=1)` and read the `agency` field.
+
 | Code | Agency |
 |---|---|
-| `002` | Department of Finance |
-| `040` | Police Department |
+| `002` | Mayoralty |
+| `040` | Department of Education |
+| `056` | Police Department |
 | `057` | Fire Department |
-| `071` | Department of Correction |
-| `072` | Department of Probation |
-| `127` | Department of Education |
-| `346` | Department of Homeless Services |
-| `473` | Department of Social Services |
-| `801` | Department of Citywide Administrative Services |
+| `071` | Department of Homeless Services |
+| `072` | Department of Correction |
+| `127` | Financial Information Services Agency |
+| `801` | Department of Small Business Services |
 | `826` | Department of Environmental Protection |
 | `841` | Department of Transportation |
 | `846` | Department of Parks and Recreation |
-| `856` | Department of Records and Information Services (DORIS) |
+| `856` | Department of Citywide Administrative Services |
 | `858` | Office of Technology and Innovation (OTI / DoITT) |
 
 ---

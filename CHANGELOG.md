@@ -55,6 +55,24 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   with pinned `jsonschema` 4.26.0, `referencing` 0.37.0 and `rfc3987` 1.3.8). The release
   workflow runs `about-data check --release` before `npm publish`.
 
+### Fixed
+
+- Agency codes (#37). The `agency_code` examples said `'040'` for NYPD (040 is the
+  Department of Education; NYPD is 056) and `'002'` for the Department of Finance (002 is
+  the Mayoralty). The README's agency table had 9 of 14 codes wrong. Both now list only
+  codes Checkbook NYC itself returned for them (one `search_budget` call per code,
+  2026-10-12 and 13). The README's `page_size` tables said "max 1000"; the maximum has been
+  20,000 since 1.6.0.
+- A reply that is not the API's XML no longer surfaces as a bare "Empty response" (#39). The
+  error says what it most likely was (`server_timeout`, `api_rejected_request`,
+  `access_challenge`, `empty_body` or `unparseable`, each from a marker seen in a real
+  reply), what to try, the HTTP status, `Content-Type`, length and the first 300 characters,
+  and that this is not "no records". Still not retried.
+- `npm run check:columns -- <relative path>` reads the path from where npm was run
+  (`INIT_CWD`), not the package root (#43c).
+- `scripts/probe-api-spec.sh` keeps every `<description>` in a reply, one per line, instead
+  of only the last (#43d).
+
 ### Tests
 
 - `test/about-data.test.mjs`: every tool the server lists has a source
@@ -67,6 +85,12 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   lab@beta.nyc and matches the module's `outputSchema`; `npm pack --dry-run` lists
   `DATA-SOURCES.json` and `data.json`.
 - `test/tools.test.mjs`: `about_data` in the expected tool names.
+- `test/agency-codes.test.mjs`: every agency code in the README table, the README examples
+  and the tool descriptions is one checked against Checkbook NYC, with its own agency (#37).
+- `test/non-xml-reply.test.mjs`: each reply kind from its recorded sample, the evidence, "not
+  no records", no retry, and the tool result has no zero count (#39).
+- `test/check-default-columns.test.mjs`: a relative path resolves against `INIT_CWD` (#43c).
+  `test/silent-empty.test.mjs`: a two-message reply keeps both descriptions (#43d).
 
 ## [1.7.0] - 2026-11-13
 
