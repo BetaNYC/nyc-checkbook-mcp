@@ -16,7 +16,7 @@ const failXml = (d) =>
 
 const CASES = [
   { name: "network error", fetch: async () => { throw new TypeError("fetch failed"); } },
-  { name: "HTTP 403", fetch: async () => new Response("blocked", { status: 403 }), want: /Stop calling it for a while/ },
+  { name: "HTTP 403", fetch: async () => new Response("blocked", { status: 403 }), want: /Stop using these tools for a while/ },
   { name: "HTTP 503", fetch: async () => new Response("down", { status: 503 }), want: /Try again in a few minutes/ },
   { name: "API refusal, long message", fetch: async () => new Response(failXml(LONG), { status: 200 }), want: /cut at 500 characters/ },
   { name: "not the API's XML", fetch: async () => new Response("SQLSTATE[57014]: Query canceled", { status: 200 }), want: /Try a narrower search/ },

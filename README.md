@@ -326,7 +326,7 @@ Natural-language questions this MCP can answer today, by persona:
 
 ## Common agency codes
 
-Each code below is the agency Checkbook NYC itself returned for it (one `search_budget` call per code, 2026-10-12 and 13, #37). Check a code you do not see here the same way: `search_budget(agency_code="…", page_size=1)` and read the `agency` field.
+Each code below was checked against Checkbook NYC: one `search_budget` call per code (2026-10-12 and 13, #37), and [Checkbook NYC's agency list](https://www.checkbooknyc.com/ref_code_list/agency) (2026-11-18). The names are the ones on that list, except `858`: Checkbook NYC still calls it the Department of Information Technology and Telecommunications (DoITT), the agency now named the Office of Technology and Innovation (OTI). Check a code you do not see here the same way: `search_budget(agency_code="…", page_size=1)` and read the `agency` field, or look it up on the list.
 
 | Code | Agency |
 |---|---|
@@ -400,16 +400,27 @@ Or if installed globally:
 
 ### Limits
 
-The NYC Comptroller's office publishes these limits for the Checkbook NYC API. Both were confirmed directly with their team on 2026-07-28.
+The NYC Comptroller's office set these limits for the Checkbook NYC API. Both were confirmed directly with their team on 2026-07-28 and in writing on 2026-07-31. This server follows them by default.
 
 | Limit | Value | How this server handles it |
 |---|---|---|
-| Request rate | **1 request per second** | Enforced internally. Every outbound request is serialized and spaced at least 1.1 seconds apart, process-wide, including retries. |
+| Request rate | **1 request per second**, per IP address, for POST requests to `/api` | Enforced internally. Every outbound request is serialized and spaced at least 1.1 seconds apart, process-wide, including retries. Two copies of this server on one network share the limit, and this server cannot see the other (#28). |
 | Records per call | **20,000** | Accepted as the ceiling for `page_size`. The default stays at 50, because the practical limit for an MCP response is your context window rather than the API. |
 
 **Exceeding the rate limit has consequences beyond a throttle.** The API sits behind an Imperva edge that will place a client into a blocked state that persists well past the burst that caused it, and presents as an HTTP 403 on every subsequent request, including from an ordinary browser on the same network. If you fork this server or write your own client, pace your requests.
 
-Each request times out after 60 seconds, and only network errors and HTTP 5xx replies are retried (at most 3 attempts, with growing waits, honoring `Retry-After`). The timeout is longer than usual on purpose: a timed-out request would be retried, re-sending a slow query to an edge that blocks bursts.
+Each request times out after 60 seconds. The timeout is longer than usual on purpose: a timed-out request is retried, re-sending a slow query to an edge that blocks bursts.
+
+| Reply | Retried? |
+|---|---|
+| 2xx | No: it is the answer. |
+| 3xx redirect | No: never followed, returned as an error. |
+| **403 or 429** | **Never**, not even once, not even with `Retry-After`. The tool says Checkbook NYC has refused or rate-limited this network, that asking again makes it worse, and to wait and report it, with the Incapsula incident ID if the reply shows one. |
+| Other 4xx | No: it is an answer. |
+| 5xx | Yes, up to 2 retries, waiting as long as `Retry-After` asks or a growing backoff. |
+| Network error or timeout | Yes, up to 2 retries, with a growing backoff. |
+
+Every attempt, first or retry, waits its turn in the same pacer, so a retry is never sent within 1.1 seconds of the request before it. No retry starts more than 120 seconds after the first attempt, so a timed-out request is retried at most once.
 
 This server also declines to follow HTTP redirects. A redirect chain is followed inside a single `fetch()` call, where rate pacing cannot reach it, so one logical API call can arrive at the origin as dozens of requests.
 
@@ -417,7 +428,7 @@ This server also declines to follow HTTP redirects. A redirect chain is followed
 
 - **Endpoint:** `POST https://www.checkbooknyc.com/api`
 - **Format:** XML (handled internally — tools accept and return JSON)
-- **Authentication:** none. Requests identify themselves only by User-Agent.
+- **Authentication:** none. Requests identify themselves only by User-Agent: `betanyc-checkbook-mcp/<version> (github.com/BetaNYC/nyc-checkbook-mcp)`, never a browser's.
 - **Coverage:** Citywide agencies + NYCEDC and NYCHA as other government entities (OGE)
 - **Fiscal year:** NYC fiscal year runs July 1 – June 30 (FY2025 = July 2024 – June 2025)
 - **`smart_search` is disabled by default:** the `/smart_search` web path is not a supported API endpoint (WAF-fronted, JS-rendered), so the server does not call it unless `CHECKBOOK_ENABLE_SMART_SEARCH=1` is set. Use the structured XML-API tools; see the note under *Tools reference*.

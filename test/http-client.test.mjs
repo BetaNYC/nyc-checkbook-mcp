@@ -301,7 +301,7 @@ test("#21 callCheckbookApi throws on a 403 — never total_records:0", async () 
   try {
     await assert.rejects(
       () => callCheckbookApi({ type_of_data: "Spending" }),
-      (err) => err instanceof CheckbookApiError && err.kind === "http" && err.status === 403
+      (err) => err instanceof CheckbookApiError && err.kind === "refused" && err.status === 403
     );
   } finally {
     globalThis.fetch = original;
