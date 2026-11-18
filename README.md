@@ -324,7 +324,7 @@ Natural-language questions this MCP can answer today, by persona:
 
 ## Common agency codes
 
-Each code below is the agency Checkbook NYC itself returned for it (one `search_budget` call per code, 2026-10-12 and 13, #37). Check a code you do not see here the same way: `search_budget(agency_code="…", page_size=1)` and read the `agency` field.
+Each code below was checked against Checkbook NYC: one `search_budget` call per code (2026-10-12 and 13, #37), and [Checkbook NYC's agency list](https://www.checkbooknyc.com/ref_code_list/agency) (2026-11-18). The names are the ones on that list, except `858`: Checkbook NYC still calls it the Department of Information Technology and Telecommunications (DoITT), the agency now named the Office of Technology and Innovation (OTI). Check a code you do not see here the same way: `search_budget(agency_code="…", page_size=1)` and read the `agency` field, or look it up on the list.
 
 | Code | Agency |
 |---|---|
