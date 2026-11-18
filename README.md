@@ -326,7 +326,7 @@ Natural-language questions this MCP can answer today, by persona:
 
 ## Common agency codes
 
-Each code below was checked against Checkbook NYC: one `search_budget` call per code (2026-10-12 and 13, #37), and [Checkbook NYC's agency list](https://www.checkbooknyc.com/ref_code_list/agency) (2026-11-18). The names are the ones on that list, except `858`: Checkbook NYC still calls it the Department of Information Technology and Telecommunications (DoITT), the agency now named the Office of Technology and Innovation (OTI). Check a code you do not see here the same way: `search_budget(agency_code="…", page_size=1)` and read the `agency` field, or look it up on the list.
+Each code below was checked against Checkbook NYC: one `search_budget` call per code (2026-10-12 and 13, #37), and [Checkbook NYC's agency list](https://www.checkbooknyc.com/ref_code_list/agency) (2026-11-18). `836` (Department of Finance) is checked on that list only. The names are the ones on that list, except `858`: Checkbook NYC still calls it the Department of Information Technology and Telecommunications (DoITT), the agency now named the Office of Technology and Innovation (OTI). Check a code you do not see here the same way: `search_budget(agency_code="…", page_size=1)` and read the `agency` field, or look it up on the list.
 
 | Code | Agency |
 |---|---|
@@ -341,6 +341,7 @@ Each code below was checked against Checkbook NYC: one `search_budget` call per 
 | `826` | Department of Environmental Protection |
 | `841` | Department of Transportation |
 | `846` | Department of Parks and Recreation |
+| `836` | Department of Finance |
 | `856` | Department of Citywide Administrative Services |
 | `858` | Office of Technology and Innovation (OTI / DoITT) |
 
@@ -404,7 +405,7 @@ The NYC Comptroller's office set these limits for the Checkbook NYC API. Both we
 
 | Limit | Value | How this server handles it |
 |---|---|---|
-| Request rate | **1 request per second**, per IP address, for POST requests to `/api` | Enforced internally. Every outbound request is serialized and spaced at least 1.1 seconds apart, process-wide, including retries. Two copies of this server on one network share the limit, and this server cannot see the other (#28). |
+| Request rate | **1 request per second**, per IP address, for POST requests to `/api` | Enforced internally. One request at a time, process-wide, retries included. Each starts at least 1.1 seconds after the previous one finished (its reply's headers arrived, or it failed or timed out), timed on the monotonic clock. Two copies of this server on one network share the limit, and this server cannot see the other (#28). |
 | Records per call | **20,000** | Accepted as the ceiling for `page_size`. The default stays at 50, because the practical limit for an MCP response is your context window rather than the API. |
 
 **Exceeding the rate limit has consequences beyond a throttle.** The API sits behind an Imperva edge that will place a client into a blocked state that persists well past the burst that caused it, and presents as an HTTP 403 on every subsequent request, including from an ordinary browser on the same network. If you fork this server or write your own client, pace your requests.
@@ -415,12 +416,14 @@ Each request times out after 60 seconds. The timeout is longer than usual on pur
 |---|---|
 | 2xx | No: it is the answer. |
 | 3xx redirect | No: never followed, returned as an error. |
-| **403 or 429** | **Never**, not even once, not even with `Retry-After`. The tool says Checkbook NYC has refused or rate-limited this network, that asking again makes it worse, and to wait and report it, with the Incapsula incident ID if the reply shows one. |
+| **403 or 429** | **Never**, not even once, not even with `Retry-After`. The server stops sending anything to Checkbook NYC until it is restarted (see below). |
 | Other 4xx | No: it is an answer. |
 | 5xx | Yes, up to 2 retries, waiting as long as `Retry-After` asks or a growing backoff. |
 | Network error or timeout | Yes, up to 2 retries, with a growing backoff. |
 
-Every attempt, first or retry, waits its turn in the same pacer, so a retry is never sent within 1.1 seconds of the request before it. No retry starts more than 120 seconds after the first attempt, so a timed-out request is retried at most once.
+Every attempt, first or retry, waits its turn in the same pacer, so a retry is never sent within 1.1 seconds of the end of the request before it. No retry starts more than 120 seconds after the call began, time spent waiting in the pacer's queue included, so a timed-out request is retried at most once.
+
+**After a 403 or 429, the server stops until someone restarts it.** Checkbook NYC answers 403 or 429 when it has blocked or rate-limited your network. From that moment the server process sends nothing more to Checkbook NYC: not the call that got the reply, not the calls already waiting their turn, and not any later call, from any tool. There is no timer and it never unlocks by itself. Each of those calls answers with an error that says when the block happened, that asking again will not help and could make the block last longer, and to report it to whoever runs the server, with the incident ID if Checkbook gave one. `about_data`, `about_betanyc` and `whats_changed` keep working, because they never use the network. To start again, a person checks first (has the block cleared? did something send too many requests?), then restarts the server. Decided in #51.
 
 This server also declines to follow HTTP redirects. A redirect chain is followed inside a single `fetch()` call, where rate pacing cannot reach it, so one logical API call can arrive at the origin as dozens of requests.
 
@@ -482,11 +485,11 @@ npm run build
 
 ### Testing
 
-Tests use the Node built-in test runner and live in `test/`. They run against recorded fixtures in `test/fixtures/` rather than the live API, so the suite needs no network access and cannot trip the rate limit.
+Tests use the Node built-in test runner and live in `test/`. They run against recorded fixtures in `test/fixtures/` rather than the live API, so the suite needs no network access and cannot trip the rate limit. `npm test` loads `test/helpers/no-network.mjs` into every test file: the real `fetch` throws, so a test must install a fake one, and a test that reaches the real one fails even if the code under test swallows the error. Run the suite with `npm test`, not bare `node --test`, so the guard is on.
 
 Three areas carry tests worth knowing about before you change them:
 
-- **`test/pace.test.mjs`** guards the rate limiter, including the case where several callers are in flight at once. If you change how requests are dispatched, these are the tests that catch a regression into bursting.
+- **`test/pace.test.mjs`** and **`test/upstream-lock.test.mjs`** guard the rate limiter and the lock after a 403 or 429, including several tool calls in flight at once. They run on a virtual clock with no timing slack. If you change how requests are dispatched, these are the tests that catch a regression into bursting.
 - **`test/strict-schema.test.mjs`** asserts that unknown tool parameters are rejected rather than silently dropped.
 - **`test/check-default-columns.test.mjs`** tests the default-column checker against a recorded probe snapshot. It proves the checker works, not that the columns are valid today. Only a fresh probe run can show that (see Releases).
 

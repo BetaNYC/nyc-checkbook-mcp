@@ -7,16 +7,19 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerTools, failure, VENDOR_NAME_UNSUPPORTED_MESSAGE } from "../dist/tools.js";
 import { UPSTREAM_BODY_MAX } from "../dist/betanyc-tools.js";
+import { freshUpstream } from "./helpers/upstream.mjs";
 
 const STACK = /^\s*at\s+\S/m;
-const TRY = /Try |Check |Stop calling|Wait |Give one|Omit |Options:|Use the structured tools|report it at/;
+const TRY = /Try |Check |Stop calling|Wait |Give one|Omit |Options:|Use the structured tools|[Rr]eport it (at|to)/;
 const LONG = "x".repeat(2000);
 const failXml = (d) =>
   `<response><status><result>failure</result><messages><message><code>1101</code><description>${d}</description></message></messages></status></response>`;
 
 const CASES = [
   { name: "network error", fetch: async () => { throw new TypeError("fetch failed"); } },
-  { name: "HTTP 403", fetch: async () => new Response("blocked", { status: 403 }), want: /Stop using these tools for a while/ },
+  { name: "HTTP 403", fetch: async () => new Response("blocked", { status: 403 }), want: /stopped sending requests to Checkbook NYC until it is restarted/ },
+  // After the 403 the process is locked (#51): nothing is sent, and the answer still says what to do.
+  { name: "locked after a 403", locked: true, fetch: async () => assert.fail("a locked server sent a request"), want: /must be restarted/ },
   { name: "HTTP 503", fetch: async () => new Response("down", { status: 503 }), want: /Try again in a few minutes/ },
   { name: "API refusal, long message", fetch: async () => new Response(failXml(LONG), { status: 200 }), want: /cut at 500 characters/ },
   { name: "not the API's XML", fetch: async () => new Response("SQLSTATE[57014]: Query canceled", { status: 200 }), want: /Try a narrower search/ },
@@ -46,6 +49,7 @@ test("#57 every Checkbook failure is a plain, cut, stack-free isError with what 
   const original = globalThis.fetch;
   try {
     for (const c of CASES) {
+      if (!c.locked) freshUpstream();
       globalThis.fetch = c.fetch;
       const res = await client.callTool({ name: "search_budget", arguments: { fiscal_year: "2026", page_size: 1 } });
       const text = assertPlainFailure(res, c.name);

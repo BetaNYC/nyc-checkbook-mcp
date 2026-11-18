@@ -4,18 +4,20 @@
  * records per call, and a block, not a throttle, for going over. So a 403 or a 429 is
  * NEVER retried, not even with Retry-After, and the error says stop and report.
  *
- * All offline: fetch is a fake; pace() is the real pacer.
+ * After any 403 or 429 the process locks until restart (test/upstream-lock.test.mjs).
+ *
+ * All offline: fetch is a fake; pace() is the real pacer, on a virtual clock.
  */
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { fetchWithRetry, callCheckbookApi, CheckbookApiError, incidentId } from "../dist/checkbook.js";
 import { registerTools } from "../dist/tools.js";
+import { freshUpstream, withFetch } from "./helpers/upstream.mjs";
 
 const MIN_INTERVAL_MS = 1_100;
-const TOLERANCE_MS = 50; // timers fire late, never early; same slack as pace.test.mjs
 const OK_XML =
   "<response><status><result>success</result></status>" +
   "<result_records><record_count>0</record_count></result_records></response>";
@@ -23,15 +25,10 @@ const BLOCK_PAGE =
   "<html><body><iframe>Request unsuccessful. Incapsula incident ID: 160000700030852915-73978535351423378</iframe></body></html>";
 const RETRY_INVITE = /try again|retry|ask again (?!now)/i;
 
-async function withFetch(fake, fn) {
-  const original = globalThis.fetch;
-  globalThis.fetch = fake;
-  try {
-    return await fn();
-  } finally {
-    globalThis.fetch = original;
-  }
-}
+let clock;
+beforeEach(() => {
+  clock = freshUpstream();
+});
 
 for (const status of [403, 429]) {
   test(`#51 a ${status} with Retry-After is sent once and never retried`, async () => {
@@ -68,7 +65,8 @@ for (const status of [403, 429]) {
             assert.match(err.message, status === 429 ? /rate-limited/ : /refused/);
             assert.match(err.message, /not "no records"/);
             assert.match(err.message, /Do not ask Checkbook NYC again now/);
-            assert.match(err.message, /report it at https:\/\/github\.com\/BetaNYC\/nyc-checkbook-mcp\/issues/);
+            assert.match(err.message, /This server has stopped sending requests to Checkbook NYC until it is restarted/);
+            assert.match(err.message, /report it to whoever runs this server or at https:\/\/github\.com\/BetaNYC\/nyc-checkbook-mcp\/issues/);
             assert.match(err.message, /160000700030852915-73978535351423378/);
             assert.doesNotMatch(err.message, RETRY_INVITE);
             return true;
@@ -93,7 +91,7 @@ test("#51 the tool's answer to a 429 says stop and report, and does not invite a
     assert.equal(res.isError, true);
     const text = res.content.map((c) => c.text).join("\n");
     assert.match(text, /rate-limited requests from this network \(HTTP 429\)/);
-    assert.match(text, /Stop using these tools for a while/);
+    assert.match(text, /Stop using these tools/);
     assert.match(text, /incident ID 160000700030852915-73978535351423378/);
     assert.doesNotMatch(text, RETRY_INVITE);
   } finally {
@@ -108,8 +106,8 @@ test("#51 incidentId reads both forms Incapsula uses, and nothing else", () => {
   assert.equal(incidentId("Forbidden"), undefined);
 });
 
-test("#51 retried failures (timeout, 5xx) stay at least the pacing interval apart", async () => {
-  const stamps = [];
+test("#51 retried failures (timeout, 5xx) start at least 1.1 s after the attempt before them finished", async () => {
+  const spans = [];
   const replies = [
     () => {
       throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
@@ -122,17 +120,22 @@ test("#51 retried failures (timeout, 5xx) stay at least the pacing interval apar
     {},
     { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1, deadlineMs: 60_000, timeoutMs: 1_000 },
     {
+      sleepImpl: (ms) => clock.sleep(ms),
+      makeSignal: () => undefined,
       fetchImpl: async () => {
-        stamps.push(Date.now());
-        return replies[stamps.length - 1]();
+        const span = [clock.now()];
+        spans.push(span);
+        await clock.sleep(800); // the attempt takes time: a connection, a slow reply, a timeout
+        span.push(clock.now());
+        return replies[spans.length - 1]();
       },
     }
   );
   assert.equal(res.status, 200);
-  assert.equal(stamps.length, 3, "two retries, then the answer");
-  for (let i = 1; i < stamps.length; i++) {
-    const gap = stamps[i] - stamps[i - 1];
-    assert.ok(gap >= MIN_INTERVAL_MS - TOLERANCE_MS, `retry ${i} came ${gap} ms after the request before it`);
+  assert.equal(spans.length, 3, "two retries, then the answer");
+  for (let i = 1; i < spans.length; i++) {
+    const gap = spans[i][0] - spans[i - 1][1];
+    assert.ok(gap >= MIN_INTERVAL_MS, `retry ${i} started ${gap} ms after the attempt before it finished`);
   }
 });
 

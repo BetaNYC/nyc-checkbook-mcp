@@ -14,7 +14,7 @@
  *   - redirect:"manual" returns the actual 3xx response server-side, NOT an
  *     opaqueredirect (nodejs/undici#1193).
  */
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -31,6 +31,10 @@ import {
   DEFAULT_RETRY_POLICY,
 } from "../dist/checkbook.js";
 import { VERSION } from "../dist/version.js";
+import { freshUpstream } from "./helpers/upstream.mjs";
+
+// A 403 locks the process (#51); each test starts unlocked, on a virtual pacer clock.
+beforeEach(() => freshUpstream());
 
 const here = dirname(fileURLToPath(import.meta.url));
 const readPkg = () => JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8"));
@@ -140,12 +144,14 @@ test("#23 REAL loopback server: a 302 is returned, not followed (one hop, real u
   await once(server, "listening");
   const { port } = server.address();
   try {
-    // REAL global fetch (no fetchImpl) — proves undici's redirect:"manual" on this runtime.
+    // REAL undici fetch, loopback only (the suite's network guard allows nothing else):
+    // proves redirect:"manual" on this runtime.
+    const { loopbackFetch } = globalThis[Symbol.for("nyc-checkbook-mcp.network-guard")];
     const res = await fetchWithRetry(
       `http://127.0.0.1:${port}/start`,
       {},
       DEFAULT_RETRY_POLICY,
-      { makeSignal: () => undefined }
+      { makeSignal: () => undefined, fetchImpl: loopbackFetch }
     );
     assert.equal(res.status, 302, "undici returns the real 3xx status for redirect:'manual' (nodejs/undici#1193)");
     assert.equal(res.headers.get("location"), "/final", "Location is inspectable, not opaque");

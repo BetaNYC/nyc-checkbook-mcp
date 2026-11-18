@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.8.0] - unreleased
 
 Adds `about_data`, the third tool BetaNYC adds to each of its MCP servers, and
-`DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.4.0.
+`DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.5.0.
 Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
 
 ### Added
@@ -66,7 +66,8 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   Department of Education; NYPD is 056) and `'002'` for the Department of Finance (002 is
   the Mayoralty). The README's agency table had 9 of 14 codes wrong. Both now list only
   codes Checkbook NYC itself returned for them (one `search_budget` call per code,
-  2026-10-12 and 13). The README's `page_size` tables said "max 1000"; the maximum has been
+  2026-10-12 and 13), plus `836` for the Department of Finance from Checkbook NYC's agency
+  list (2026-11-18). The README's `page_size` tables said "max 1000"; the maximum has been
   20,000 since 1.6.0.
 - A reply that is not the API's XML no longer surfaces as a bare "Empty response" (#39). The
   error says what it most likely was (`server_timeout`, `api_rejected_request`,
@@ -83,14 +84,20 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   `as_of`, `as_of_kind`, the field names `about_data` uses) and a "Source: … As of … Link: …"
   line, built with the shared module's `provenance` from the tool's source in
   `DATA-SOURCES.json` (#52, #53). The as-of is the time of the request. The disclaimer no
-  longer repeats the source and publisher.
+  longer repeats the source and publisher. Layout: one text block, the JSON first, then the
+  Source line, then the disclaimer. The text was not JSON alone before either (1.7.0 and
+  earlier put the disclaimer after the JSON), so a caller that parses it still has to cut it
+  at the first blank line after the JSON.
 - Every list answer has a `showing` sentence: which records it holds, of how many, and which
   `page` to ask for next (#54). `get_contract` returns `total_records` and says when a
   contract has more than the 10 rows it shows, and how to get all of them.
 - Text several tools shared (vendor-name guidance, contract field names per shape, agency
-  code examples) moved from the tool and parameter descriptions into the server instructions,
-  once (`CHECKBOOK_GUIDE` in `src/betanyc.ts`), with the NYC fiscal-year rule (#59). The
-  shared about_data paragraph is unchanged.
+  code examples) is said in full once, in the server instructions (`CHECKBOOK_GUIDE` in
+  `src/betanyc.ts`), with the NYC fiscal-year rule (#59). The shared about_data paragraph is
+  unchanged. Some AI apps ignore server instructions, so the tools that need them keep short
+  versions: agency code examples on every `agency_code`, where to look up a vendor's
+  contracts on `search_contracts` and `search_spending`, a reseller note on the NYCEDC and
+  NYCHA `vendor_name`, and the field names per shape on `search_contracts` and `get_contract`.
 - An evaluation set: `eval/questions.json`, 14 questions with known answers, run offline
   against recorded replies by `npm run eval` (results in `eval/runs/`) and by
   `test/eval.test.mjs` (#55).
@@ -102,6 +109,20 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   per IP address for POST `/api`, 20,000 records per call, a block for going over). The
   retry policy is one table in the README and in `src/checkbook.ts`. Smart search: a 3xx is
   never a result, and a 403 or 429 gives the same answer without suggesting other tools.
+- After any 403 or 429 the server process locks (#51, the owner's decision of 2026-11-18):
+  it sends nothing more to Checkbook NYC, on any path (`runSearch`, `get_contract`,
+  `smart_search`), until it is restarted. No timer, no automatic unlock. Calls already
+  waiting in the pacer are not sent. Every later call gets a plain `isError` (new error kind
+  `locked`) with the time of the block, that asking again will not help, to report it to
+  whoever runs the server with the first block's incident ID, and that a person must check
+  before the restart. `about_data`, `about_betanyc` and `whats_changed` keep working.
+- The pacer measured spacing from when a request was allowed to start, on `Date.now`, so two
+  requests could reach the server less than a second apart when the first had to open a
+  connection. Now one request is in flight at a time, and each starts at least 1.1 s after
+  the previous one finished (headers received, or the attempt failed or timed out) and after
+  it started, on the monotonic clock (`performance.now`). Retries included.
+- The 120 s retry deadline now counts time spent waiting in the pacer's queue, as the README
+  says: a retry whose turn comes after 120 s is not sent.
 - `npm run check:columns -- <relative path>` reads the path from where npm was run
   (`INIT_CWD`), not the package root (#43c).
 - `scripts/probe-api-spec.sh` keeps every `<description>` in a reply, one per line, instead
@@ -113,7 +134,7 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   (`assertEveryToolExplained`, which also fails on an unknown tool); the eight topics; every
   API source is the Comptroller's, live, with `figures_official` false (modified by BetaNYC);
   a tool name as the topic; the smart search source is unavailable when off and live when on;
-  a bad topic and an unknown key; the server instructions; module 1.4.0.
+  a bad topic and an unknown key; the server instructions; module 1.5.0.
 - `test/betanyc-tools.test.mjs`: the three shared tools' input schemas, titles, descriptions
   and annotations equal the factory's, field by field; `about_data` over stdio answers with
   lab@beta.nyc and matches the module's `outputSchema`; `npm pack --dry-run` lists
@@ -123,7 +144,20 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   `openWorldHint` (`assertEveryToolAnnotated`); every Checkbook tool is open-world and has a
   title (#50).
 - `test/tool-size.test.mjs`: `tools/list` plus the instructions stay within 24,000
-  characters (23,122 measured 2026-11-18), the nyc-311-mcp measure (#56).
+  characters (23,122 measured 2026-11-18; 23,941 with the short hints back on the tools), the
+  nyc-311-mcp measure (#56).
+- `test/upstream-lock.test.mjs` (#51): five tool calls at once whose first reply is a 429 (and
+  again a 403) send one request, and the other four get the locked error; a later call and a
+  call a day later send nothing; a block on any path locks every path; the three tools that
+  never use the network still answer; the reset seam refuses to run outside the test runner;
+  two different tool calls at once start their requests 1.1 s after the first finished; a
+  retry that waited in the queue past 120 s is not sent.
+- `test/pace.test.mjs` runs on a virtual clock (`test/helpers/upstream.mjs`) with no timer
+  slack, so a pacer at 1,050 ms or one pacer per call fails it; one real-clock test checks
+  the monotonic clock while the wall clock jumps.
+- A suite-wide network guard (`test/helpers/no-network.mjs`, loaded by `npm test` with
+  `--import`): the real `fetch` throws in every test file, and a test that reaches it without
+  a stub fails even when the error is swallowed. `test/network-guard.test.mjs` checks it.
 - `test/rate-limits.test.mjs` (#51): a 403 or 429 with `Retry-After` is one request with
   no retry, and its error says stop and report with the incident ID; a timed-out and a 5xx
   attempt are each retried at least 1.1 s after the one before; the default policy retries
@@ -136,8 +170,8 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   and a retrieval as-of from `DATA-SOURCES.json`; a 19,139-record result says "Showing
   records 1 to 50 of 19,139" and the next page; the last page, no matches, a page past the
   end; `get_contract` with more rows than it shows (#52, #53, #54).
-- `test/instructions.test.mjs`: the shared guidance is in the instructions, once, and in no
-  tool or parameter description (#59). `test/stdout.test.mjs`: the built server, started over
+- `test/instructions.test.mjs`: the shared guidance is in the instructions, once; the long
+  forms are in no tool, and the tools that need a hint carry a short one (#59). `test/stdout.test.mjs`: the built server, started over
   stdio, writes only JSON-RPC lines to stdout (#58). `test/eval.test.mjs`: every evaluation
   question passes (#55).
 - `test/agency-codes.test.mjs`: every agency code in the README table, the README examples

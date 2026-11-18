@@ -47,7 +47,7 @@
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "prepare": "npm run build",
-    "test": "npm run build && node --test test/*.test.mjs",
+    "test": "npm run build && node --import ./test/helpers/no-network.mjs --test test/*.test.mjs",
     "check:columns": "npm run build && node scripts/check-default-columns.mjs",
     "eval": "npm run build && node eval/run.mjs"
   },

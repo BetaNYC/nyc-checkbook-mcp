@@ -22,6 +22,7 @@ const CHECKED = {
   "127": /Financial Information Services/,
   "801": /Small Business/,
   "826": /Environmental Protection|DEP/,
+  "836": /Finance/, // Checkbook NYC's agency list only (2026-11-18, commit 20cc263), no search_budget call
   "841": /Transportation|DOT/,
   "846": /Parks/,
   "856": /Citywide Administrative|DCAS/,

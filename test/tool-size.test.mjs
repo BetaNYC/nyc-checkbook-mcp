@@ -8,6 +8,9 @@
 // instructions rather than in each description.
 // 2026-11-18, #59: shared text moved from the descriptions into the instructions, which also
 // gained the fiscal-year rule and checked agency-code examples; 23,532 characters, budget kept.
+// 2026-11-18, review of epic #49: short hints back on the tools that need them (agency code
+// examples, vendor names, contract field names), because some AI apps ignore server
+// instructions; 23,941 characters, budget kept.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

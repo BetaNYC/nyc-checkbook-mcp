@@ -81,7 +81,7 @@ export interface ApiSuccess {
  */
 export class CheckbookApiError extends Error {
   readonly status?: number;
-  readonly kind: "network" | "redirect" | "refused" | "http" | "api" | "silent-empty" | ReplyKind;
+  readonly kind: "network" | "redirect" | "refused" | "locked" | "http" | "api" | "silent-empty" | ReplyKind;
   /** The API's own words, passed on to the caller cut to 500 characters (toolError, #57). */
   readonly upstream?: string;
   constructor(message: string, opts: { status?: number; kind: CheckbookApiError["kind"]; upstream?: string }) {
@@ -201,9 +201,14 @@ const USER_AGENT = `betanyc-checkbook-mcp/${VERSION} (github.com/BetaNYC/nyc-che
 //   5xx                         yes, up to 2 retries, backoff or Retry-After
 //   network error / timeout     yes, up to 2 retries, backoff
 //
-// Every attempt, first or retry, waits its turn in pace(): at least 1.1 s after the previous
-// request started, process-wide. No new attempt starts after 120 s (deadlineMs), so with a
-// 60 s timeout a timed-out request is retried at most once.
+// Every attempt, first or retry, waits its turn in pace(): one request at a time, process-wide,
+// each starting at least 1.1 s after the previous one finished (and after it started). No
+// attempt after the first starts more than 120 s (deadlineMs) after the call began, time spent
+// waiting in the pacer's queue included, so with a 60 s timeout a timed-out request is
+// retried at most once.
+//
+// After any 403 or 429 the whole process locks (lockUpstream): no request of any kind is sent
+// again, queued ones included, until the process is restarted. No timer, no automatic unlock.
 const REQUEST_TIMEOUT_MS = 60_000;
 
 // ─── Rate pacing ─────────────────────────────────────────────────────────────
@@ -220,31 +225,124 @@ const REQUEST_TIMEOUT_MS = 60_000;
 // back by different tools. Both are needed.
 const MIN_REQUEST_INTERVAL_MS = 1_100; // 100ms of headroom for clock skew
 
-let paceChain: Promise<void> = Promise.resolve();
-let lastRequestAt = 0;
+/** The pacer's clock. Monotonic (performance.now), so a wall-clock change cannot shorten a gap. */
+export interface PacerClock {
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+}
+
+const REAL_CLOCK: PacerClock = {
+  now: () => performance.now(),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+let clock: PacerClock = REAL_CLOCK;
+/** The queue: each request waits for the one before it to finish. Never rejects. */
+let paceTail: Promise<void> = Promise.resolve();
+let lastStartedAt = -Infinity;
+let lastFinishedAt = -Infinity;
+
+/** Hand back the pacer's turn. Call it once the reply's headers arrive or the attempt fails. */
+export type ReleaseTurn = () => void;
 
 /**
- * Serializes every outbound request and spaces them at least
- * MIN_REQUEST_INTERVAL_MS apart, process-wide. Awaited before each fetch,
- * including retries, so no code path can burst.
+ * Wait for this request's turn and return the function that ends it. Every outbound
+ * request goes through here, retries included, so no code path can burst:
+ *
+ * - one request at a time, process-wide (the next waits for the previous to be released);
+ * - each starts at least MIN_REQUEST_INTERVAL_MS after the previous one FINISHED (headers
+ *   received, or the attempt failed or timed out), and after it started. Measuring from the
+ *   start alone let two requests reach the server less than a second apart when the first
+ *   had to open a connection;
+ * - once the process is locked (a 403 or 429), every waiting and later turn rejects with
+ *   the locked error instead, and nothing is sent.
+ *
+ * The caller MUST call the returned function exactly once (fetchWithRetry does, in finally).
  *
  * KNOWN LIMITATION (issue #28): per-process only. The limit is per IP address
  * (the Comptroller's office, 2026-07-31), so two copies of this server on one
  * network can still exceed it together, and no in-process fix addresses that.
  */
-async function schedule(): Promise<void> {
-  const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  lastRequestAt = Date.now();
+export function pace(): Promise<ReleaseTurn> {
+  const previous = paceTail;
+  let endTurn!: () => void;
+  const turnEnded = new Promise<void>((resolve) => (endTurn = resolve));
+  paceTail = previous.then(() => turnEnded);
+
+  return previous.then(async () => {
+    try {
+      for (;;) {
+        if (lock) throw lockedError();
+        const wait = Math.max(lastStartedAt, lastFinishedAt) + MIN_REQUEST_INTERVAL_MS - clock.now();
+        if (wait <= 0) break;
+        // Loop rather than trust one timer: a timer can fire a millisecond early.
+        await clock.sleep(wait);
+      }
+    } catch (err) {
+      endTurn(); // nothing was sent, so the next request's spacing is unchanged
+      throw err;
+    }
+    lastStartedAt = clock.now();
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      lastFinishedAt = clock.now();
+      endTurn();
+    };
+  });
 }
 
-export function pace(): Promise<void> {
-  // .then(schedule, schedule) — the onRejected arm is load-bearing. With only the
-  // onFulfilled arm, one rejection anywhere in the chain leaves paceChain
-  // permanently rejected, and every later request fails forever with an unrelated
-  // error until the process restarts. Pacing must survive its own predecessor.
-  paceChain = paceChain.then(schedule, schedule);
-  return paceChain;
+// ─── The lock after a 403 or 429 (#51) ───────────────────────────────────────
+
+interface UpstreamLock {
+  status: number;
+  at: Date;
+  incidentId?: string;
+}
+
+let lock: UpstreamLock | undefined;
+
+/** True once Checkbook NYC has answered 403 or 429 in this process. Stays true until restart. */
+export function upstreamLocked(): boolean {
+  return lock !== undefined;
+}
+
+/** Lock the process. The first block is kept: its time, status and incident ID. */
+function lockUpstream(status: number, incident?: string): void {
+  if (!lock) lock = { status, at: new Date() };
+  if (incident && !lock.incidentId) lock.incidentId = incident;
+}
+
+/** The answer to every upstream call once the process is locked. Nothing was sent. */
+export function lockedMessage(): string {
+  const l = lock;
+  if (!l) return "";
+  return (
+    `Checkbook NYC ${l.status === 429 ? "rate-limited" : "refused"} requests from this network at ` +
+    `${l.at.toISOString()} (HTTP ${l.status}). This server has stopped sending requests to Checkbook NYC, ` +
+    `and sent nothing for this call. Asking again will not help and could make the block last longer. ` +
+    `Report it to whoever runs this server` +
+    (l.incidentId ? `, with the Incapsula incident ID ${l.incidentId}` : "") +
+    `. The server must be restarted, after a person has checked, before it will send anything again.`
+  );
+}
+
+function lockedError(): CheckbookApiError {
+  return new CheckbookApiError(lockedMessage(), { status: lock?.status, kind: "locked" });
+}
+
+/**
+ * TESTS ONLY. Reset the pacer and the lock, and optionally swap the pacer's clock. Refuses to
+ * run outside the Node test runner (NODE_TEST_CONTEXT), so the server cannot unlock itself.
+ */
+export function resetUpstreamForTests(testClock?: PacerClock): void {
+  if (!process.env.NODE_TEST_CONTEXT) throw new Error("resetUpstreamForTests is for the test runner only");
+  lock = undefined;
+  clock = testClock ?? REAL_CLOCK;
+  paceTail = Promise.resolve();
+  lastStartedAt = -Infinity;
+  lastFinishedAt = -Infinity;
 }
 
 /**
@@ -280,8 +378,9 @@ export interface RetryDeps {
   nowImpl: () => number;
   randomImpl: () => number;
   makeSignal: () => AbortSignal | undefined;
-  /** Rate pacer. Injected as a no-op in unit tests so they need no real sleeps. */
-  paceImpl: () => Promise<void>;
+  /** Rate pacer. Injected as a no-op in unit tests so they need no real sleeps. Resolves to
+   * the function that ends the turn (or to nothing, for a no-op). */
+  paceImpl: () => Promise<ReleaseTurn | void>;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -356,7 +455,8 @@ export function parseRetryAfterMs(
  * - Honors `Retry-After` on a retryable 5xx when present.
  *
  * Returns the terminal Response (2xx, 4xx, or an unfollowed 3xx/5xx); the caller
- * decides what is an error. Rejects only when every attempt hit a network error.
+ * decides what is an error. Rejects when every attempt hit a network error, and with the
+ * locked error (CheckbookApiError, kind "locked") once the process is locked (#51).
  */
 export async function fetchWithRetry(
   url: string,
@@ -366,13 +466,18 @@ export async function fetchWithRetry(
 ): Promise<Response> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const sleepImpl = deps.sleepImpl ?? defaultSleep;
-  const now = deps.nowImpl ?? Date.now;
+  // Monotonic for the deadline; Retry-After dates are wall-clock (parseRetryAfterMs).
+  const now = deps.nowImpl ?? (() => clock.now());
+  const wallNow = deps.nowImpl ?? Date.now;
   const random = deps.randomImpl ?? Math.random;
   const makeSignal = deps.makeSignal ?? (() => AbortSignal.timeout(policy.timeoutMs));
   const paceImpl = deps.paceImpl ?? pace;
 
+  // When the call began, before any wait in the pacer's queue (#51: the 120 s deadline counts
+  // queue time).
   const start = now();
   let lastError: unknown;
+  let lastResponse: Response | undefined;
 
   /** Sleep before the next attempt if budget remains; false = give up now. */
   const backoffOrGiveUp = async (attempt: number, delayMs: number): Promise<boolean> => {
@@ -383,26 +488,50 @@ export async function fetchWithRetry(
   };
 
   for (let attempt = 1; attempt <= policy.maxAttempts; attempt++) {
-    let response: Response;
+    // Locked after a 403 or 429 (#51): send nothing, not even a retry already planned.
+    if (lock) throw lockedError();
+    // Rate pacing applies to every attempt, not just the first: a retry is
+    // still a request against the 1 req/sec budget. A locked pacer rejects here.
+    const endTurn = await paceImpl();
+    let response: Response | undefined;
+    let pastDeadline = false;
     try {
-      // Rate pacing applies to every attempt, not just the first: a retry is
-      // still a request against the 1 req/sec budget.
-      await paceImpl();
-      response = await fetchImpl(url, { ...init, redirect: "manual", signal: makeSignal() });
-    } catch (err) {
-      // Network error / per-request timeout — retryable.
-      lastError = err;
+      if (lock) throw lockedError(); // an injected pacer does not check the lock
+      // A retry that waited in the queue past the deadline is not sent (#51).
+      pastDeadline = attempt > 1 && now() - start > policy.deadlineMs;
+      if (!pastDeadline) {
+        try {
+          response = await fetchImpl(url, { ...init, redirect: "manual", signal: makeSignal() });
+        } catch (err) {
+          lastError = err; // network error or per-request timeout: retryable
+          lastResponse = undefined;
+        }
+        // Lock BEFORE the turn ends, so no request queued behind this one is sent, and with the
+        // incident ID, which every later locked error repeats. Read from a copy, so the caller
+        // can still read the body.
+        if (response && (response.status === 403 || response.status === 429)) {
+          lockUpstream(response.status);
+          lockUpstream(response.status, incidentId(await response.clone().text().catch(() => "")));
+        }
+      }
+    } finally {
+      endTurn?.(); // the attempt has finished: headers received, or it failed
+    }
+    if (pastDeadline) break;
+    if (!response) {
       if (!(await backoffOrGiveUp(attempt, computeBackoffMs(attempt, policy, random)))) break;
       continue;
     }
 
+    if (response.status === 403 || response.status === 429) return response; // #51: never retried, locked above
     if (isRedirectResponse(response)) return response; // #23: never follow, never retry
     if (response.status >= 400 && response.status <= 499) return response; // #24: never retry 4xx
 
     if (response.status >= 500) {
       lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+      lastResponse = response;
       const delayMs =
-        parseRetryAfterMs(response.headers.get("retry-after"), now) ??
+        parseRetryAfterMs(response.headers.get("retry-after"), wallNow) ??
         computeBackoffMs(attempt, policy, random);
       if (!(await backoffOrGiveUp(attempt, delayMs))) return response; // out of budget → surface the 5xx
       continue;
@@ -411,6 +540,7 @@ export async function fetchWithRetry(
     return response; // 2xx
   }
 
+  if (lastResponse) return lastResponse; // the last attempt was a 5xx: surface it
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
@@ -514,14 +644,16 @@ export function incidentId(body: string): string | undefined {
 
 /** The answer to a 403 or 429 (#51). It says stop and report, and never invites a retry:
  * going over the Comptroller's limit blocks the whole network, and more requests can make
- * the block last longer. */
+ * the block last longer. fetchWithRetry has already locked the process; later calls get
+ * lockedMessage(). */
 export function refusedMessage(status: number, body = ""): string {
   const id = incidentId(body);
   return (
     `Checkbook NYC has ${status === 429 ? "rate-limited" : "refused"} requests from this network ` +
     `(HTTP ${status}). This is not "no records". Do not ask Checkbook NYC again now: it blocks a ` +
     `network that sends too many requests, and each new request can make the block last longer. ` +
-    `Stop using these tools for a while, and report it at ${REPORT_URL}` +
+    `This server has stopped sending requests to Checkbook NYC until it is restarted, after a ` +
+    `person has checked. Stop using these tools, and report it to whoever runs this server or at ${REPORT_URL}` +
     (id ? ` with the Incapsula incident ID ${id}.` : ".")
   );
 }
@@ -544,6 +676,7 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiSuccess> {
       body,
     });
   } catch (err) {
+    if (err instanceof CheckbookApiError) throw err; // locked (#51): nothing was sent
     throw new CheckbookApiError(
       `Request to Checkbook NYC failed: ${err instanceof Error ? err.message : String(err)}`,
       { kind: "network" }
@@ -659,6 +792,7 @@ export async function smartSearch(
     status = response.status;
     html = await response.text();
   } catch (err) {
+    if (err instanceof CheckbookApiError) throw err; // locked (#51): nothing was sent
     return {
       available: false,
       total: 0,
