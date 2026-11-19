@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.8.0] - unreleased
 
 Adds `about_data`, the third tool BetaNYC adds to each of its MCP servers, and
-`DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.5.0.
+`DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.5.1.
 Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
 
 ### Added
@@ -40,13 +40,15 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
 
 ### Changed
 
-- `src/betanyc-tools.ts` is the workspace's shared module 1.5.0 (was 1.2.4) and
+- `src/betanyc-tools.ts` is the workspace's shared module 1.5.1 (was 1.2.4) and
   `scripts/whats_changed.py` is 1.4.1, both copied in unchanged, with the validator kit
   (`data-sources.schema.json` as shipped with 1.4.1). Never edit the copies. 1.4.0 gives
   each source one of three answers on whether it is official, naming the source, its
   publisher and a link; 1.5.0 adds helpers for a server's own tools (annotations,
-  provenance, errors, tool-list size). The 1.5.0 copy depends on
-  BetaNYC/betanyc-ai-workspace#1702 merging.
+  provenance, errors, tool-list size), and 1.5.1 tightens them: `assertEveryToolAnnotated`
+  also requires `readOnlyHint` true and a title, a live answer's time is New York time to
+  the minute, and `toolError` passes the caller's own message on as written. The 1.5.1 copy
+  depends on BetaNYC/betanyc-ai-workspace#1702 merging.
 - Every Checkbook tool declares MCP tool annotations: `readOnlyHint: true`,
   `openWorldHint: true` (each calls the live Checkbook NYC API) and a title (#50).
 - `src/betanyc.ts` registers the three shared tools from the module's factory output, so
@@ -80,10 +82,13 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   stack trace. Refused inputs (vendor name, revenue with fiscal year, a missing year,
   `smart_search` while off) are plain guidance instead of JSON. A bug in the server says
   where to report it. `CheckbookApiError` carries the API's words in `upstream`.
-- Every data answer carries a `source` object (`source`, `publisher`, `source_url`,
-  `as_of`, `as_of_kind`, the field names `about_data` uses) and a "Source: … As of … Link: …"
-  line, built with the shared module's `provenance` from the tool's source in
-  `DATA-SOURCES.json` (#52, #53). The as-of is the time of the request. The disclaimer no
+- Every data answer carries a `source` object (`source`, `publisher`, `source_url` and
+  `as_of`, the field names `about_data` uses, plus `as_of_kind` and `retrieved_at`) and a
+  "Source: … Fetched from the source for this answer at … (New York time). Link: …" line,
+  built with the shared module's `provenance` from the tool's source in `DATA-SOURCES.json`
+  (#52, #53). The as-of is the time of the request (`as_of_kind` "retrieved", the same
+  instant as `retrieved_at`, in UTC); the Source line gives it in New York time to the
+  minute. The disclaimer no
   longer repeats the source and publisher. Layout: one text block, the JSON first, then the
   Source line, then the disclaimer. The text was not JSON alone before either (1.7.0 and
   earlier put the disclaimer after the JSON), so a caller that parses it still has to cut it
@@ -134,7 +139,7 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   (`assertEveryToolExplained`, which also fails on an unknown tool); the eight topics; every
   API source is the Comptroller's, live, with `figures_official` false (modified by BetaNYC);
   a tool name as the topic; the smart search source is unavailable when off and live when on;
-  a bad topic and an unknown key; the server instructions; module 1.5.0.
+  a bad topic and an unknown key; the server instructions; module 1.5.1.
 - `test/betanyc-tools.test.mjs`: the three shared tools' input schemas, titles, descriptions
   and annotations equal the factory's, field by field; `about_data` over stdio answers with
   lab@beta.nyc and matches the module's `outputSchema`; `npm pack --dry-run` lists

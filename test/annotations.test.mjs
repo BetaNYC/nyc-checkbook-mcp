@@ -23,12 +23,16 @@ async function listTools() {
   }
 }
 
-test("every tool is annotated read-only, with openWorldHint", async () => {
+test("every tool is annotated read-only, with openWorldHint and a title", async () => {
   const tools = await listTools();
   assertEveryToolAnnotated(tools);
   for (const t of tools) assert.equal(t.annotations.readOnlyHint, true, t.name);
   // The check itself fails on a tool without annotations.
   assert.throws(() => assertEveryToolAnnotated([...tools, { name: "bare_tool" }]), /bare_tool/);
+  // Shared module 1.5.1: readOnlyHint must be true, and every tool needs a title.
+  const t = tools[0];
+  assert.throws(() => assertEveryToolAnnotated([{ ...t, annotations: { ...t.annotations, readOnlyHint: false } }]), /readOnlyHint is not true/);
+  assert.throws(() => assertEveryToolAnnotated([{ ...t, title: undefined, annotations: { ...t.annotations, title: undefined } }]), /no title/);
 });
 
 test("every Checkbook tool calls the live API (openWorldHint true) and has a title", async () => {

@@ -12,6 +12,15 @@ import { BETANYC_TOOL_NAMES } from "../dist/betanyc-tools.js";
 
 const DS = JSON.parse(readFileSync(new URL("../DATA-SOURCES.json", import.meta.url), "utf8"));
 
+/** "2026-11-18 13:05 EST", New York wall-clock time to the minute (shared module 1.5.1). */
+function nyMinute(d) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short",
+  }).formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${p.timeZoneName}`;
+}
+
 /** A success reply: `count` matches, `rows` transactions on this page. */
 function reply(count, rows) {
   const tx = Array.from({ length: rows }, (_, i) => `<transaction><agency>A</agency><n>${i + 1}</n></transaction>`).join("");
@@ -63,9 +72,22 @@ test("#52 #53 every Checkbook data answer has its source, publisher, link and a 
       assert.equal(json.source.source_url, src.source_url, name);
       assert.equal(json.source.as_of_kind, "retrieved", name);
       assert.ok(Date.parse(json.source.as_of) >= before - 1000, `${name}: as_of is the time of the request`);
-      assert.match(text, new RegExp(`\\n\\nSource: .*${src.publisher.name}.* As of ${json.source.as_of.replace(/[.]/g, "\\.")} \\(fetched from the source for this answer\\)\\. Link: ${src.source_url.replace(/[.]/g, "\\.")}`), name);
+      assert.equal(json.source.retrieved_at, json.source.as_of, `${name}: retrieved_at is the same instant`);
+      // Shared module 1.5.1: the Source line gives the fetch time in New York time, to the minute.
+      const ny = nyMinute(new Date(json.source.retrieved_at));
+      assert.match(text, new RegExp(`\\n\\nSource: .*${src.publisher.name}.*\\. Fetched from the source for this answer at ${ny} \\(New York time\\)\\. Link: ${src.source_url.replace(/[.]/g, "\\.")}`), name);
     }
   });
+});
+
+test("a live answer's Source line gives the fetch time in New York time, standard and daylight", () => {
+  const winter = answerProvenance("search_spending", new Date("2026-11-18T18:05:42Z"));
+  assert.match(winter.text, /Fetched from the source for this answer at 2026-11-18 13:05 EST \(New York time\)\./);
+  assert.equal(winter.provenance.as_of, "2026-11-18T18:05:42.000Z");
+  assert.equal(winter.provenance.retrieved_at, "2026-11-18T18:05:42.000Z");
+  assert.equal(winter.provenance.as_of_kind, "retrieved");
+  const summer = answerProvenance("search_spending", new Date("2026-07-04T03:30:00Z"));
+  assert.match(summer.text, /Fetched from the source for this answer at 2026-07-03 23:30 EDT \(New York time\)\./);
 });
 
 test("answerProvenance throws for a tool DATA-SOURCES.json does not cover", () => {
