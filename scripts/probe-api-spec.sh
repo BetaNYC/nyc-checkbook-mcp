@@ -77,10 +77,18 @@ probe () { # $1=label  $2=full request xml
     exit 1
   fi
 
-  printf '%s' "$body" \
-    | tr -d '\n' \
-    | sed -e 's/.*<description>//' -e 's/<\/description>.*//' >> "$OUT"
-  printf '\n' >> "$OUT"
+  # Every <description>, one per line, so a reply with several <message>s keeps
+  # them all and the checker's kind-specific regex picks the 1106 / 1101 one
+  # (#43d; the old greedy sed kept only the last). A body with no <description>
+  # at all is written whole, as before. `|| true`: grep exits 1 on no match.
+  local descriptions
+  descriptions=$(printf '%s' "$body" | tr -d '\n' | grep -o '<description>[^<]*</description>' || true)
+  if [ -n "$descriptions" ]; then
+    printf '%s\n' "$descriptions" | sed -e 's/<description>//' -e 's/<\/description>//' >> "$OUT"
+  else
+    printf '%s' "$body" | tr -d '\n' >> "$OUT"
+    printf '\n' >> "$OUT"
+  fi
   probe_count=$((probe_count + 1))
   sleep "$PACE"
 }

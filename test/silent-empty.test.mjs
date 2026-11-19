@@ -194,3 +194,30 @@ test("#42 search_contracts refuses registered revenue + fiscal_year with guidanc
     await server.close();
   }
 });
+
+test("probe-api-spec.sh keeps every <description> of a reply, one per line (#43d, no network)", () => {
+  // A fake curl whose reply carries two messages, the valid-values one FIRST: the
+  // old greedy sed kept only the last, and lost it.
+  const dir = mkdtempSync(join(tmpdir(), "probe-curl-"));
+  const reply =
+    "<response><status><result>failure</result><messages>" +
+    "<message><code>1106</code><description>Provided response column 'zzz_invalid' value is not allowed for 'Spending' domain. Valid values are 'agency,payee_name'</description></message>" +
+    "<message><code>1</code><description>No results found</description></message>" +
+    "</messages></status></response>";
+  writeFileSync(join(dir, "reply.xml"), reply);
+  writeFileSync(join(dir, "curl"), `#!/bin/sh\ncat '${join(dir, "reply.xml")}'\nprintf '\\n200'\n`);
+  chmodSync(join(dir, "curl"), 0o755);
+  const out = join(dir, "probe-results.txt");
+  const script = new URL("../scripts/probe-api-spec.sh", import.meta.url).pathname;
+  const r = spawnSync("bash", [script, out], {
+    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, CHECKBOOK_PROBE_PACE: "0" },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const text = readFileSync(out, "utf8");
+  const section = text.split("===== Spending :: COLUMNS =====\n")[1].split("\n=====")[0];
+  assert.equal(
+    section.trim(),
+    "Provided response column 'zzz_invalid' value is not allowed for 'Spending' domain. Valid values are 'agency,payee_name'\nNo results found"
+  );
+});

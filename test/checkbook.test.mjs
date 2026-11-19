@@ -164,7 +164,14 @@ test("classifies the real Incapsula 403 block page as unusable", () => {
   const html = fixture("smart-search-incapsula-403.html");
   const check = classifySmartSearchResponse(403, html);
   assert.equal(check.usable, false);
-  assert.match(check.reason, /WAF/);
+  // #51: a 403 says stop and report, with the incident ID from the page.
+  assert.match(check.reason, /refused requests from this network \(HTTP 403\)/);
+  assert.match(check.reason, /160000700030852915-73978535351423378/);
+});
+
+test("a 3xx is never a smart search result, whatever its body (#23)", () => {
+  const check = classifySmartSearchResponse(302, "TRANSACTION #1: Contracts\nAGENCY: Parks");
+  assert.equal(check.usable, false);
 });
 
 test("classifies the Incapsula block page as unusable even with HTTP 200", () => {

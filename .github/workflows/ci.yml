@@ -49,6 +49,7 @@ on:
       - "DATA-SOURCES.json"
       - "data.json"
       - "scripts/**"
+      - "eval/**"
   push:
     branches: [main]
     paths:
@@ -62,6 +63,7 @@ on:
       - "DATA-SOURCES.json"
       - "data.json"
       - "scripts/**"
+      - "eval/**"
   # Manual trigger — lets us fire a run on any branch. Needed because a
   # path-scoped pull_request/push event does not fire on the very PR that
   # introduces the workflow, so this gate never executed on its own PR (#2).

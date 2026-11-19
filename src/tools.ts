@@ -17,50 +17,150 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   callCheckbookApi,
+  CheckbookApiError,
   smartSearch,
   DEFAULT_COLUMNS,
   type Criteria,
   type DataDomain,
 } from "./checkbook.js";
 import { registerBetanycTools } from "./betanyc.js";
+import { errorSummary, officialKind, parseDataSources, provenance, readOnlyAnnotations, toolError } from "./betanyc-tools.js";
+import { readFileSync } from "node:fs";
 
 // ─── Disclaimer ──────────────────────────────────────────────────────────────
 
 const DISCLAIMER =
-  "\n\n---\n⚠️ Data disclaimer: Results are sourced from Checkbook NYC, " +
-  "published by the NYC Office of the Comptroller. Accuracy depends on data " +
+  // The source and publisher are in the source line above it (answerProvenance).
+  "\n\n---\n⚠️ Data disclaimer: Accuracy depends on data " +
   "submitted by City agencies to the Comptroller's office. Records may be " +
   "incomplete, delayed, or reflect amendments. Verify critical figures " +
   "directly at checkbooknyc.com or via FOIL request to the relevant agency.";
 
-function withDisclaimer(json: unknown): string {
-  return JSON.stringify(json, null, 2) + DISCLAIMER;
+// Every data answer names its source, a link and its as-of (#52, #53), from the source this
+// server's DATA-SOURCES.json gives for the tool, so an answer and about_data cannot disagree.
+// Every Checkbook tool asks the live API, so the as-of is the time of the request.
+const DATA_SOURCES = parseDataSources(
+  readFileSync(new URL("../DATA-SOURCES.json", import.meta.url), "utf8")
+).doc;
+
+/** What this server does to the data, in one line, for the Source line of each answer. It
+ * must agree with the source's `changes` in DATA-SOURCES.json, which about_data gives
+ * (test/answers.test.mjs checks the kind; the details are said in full there). */
+const API_CHANGES =
+  "converted from XML to JSON; asks for fewer fields than the API offers; spaces trimmed from the ends of values; rows not dropped or reordered";
+const SMART_SEARCH_CHANGES =
+  "fields picked out of the web page's text; results with no readable fields left out; only the first line of a value kept; a field name seen twice keeps its last value; total_results is this server's own count when the page shows no total";
+const CHANGES_BY_SOURCE: Record<string, string> = {
+  spending: API_CHANGES,
+  contracts: API_CHANGES,
+  budget: API_CHANGES,
+  payroll: API_CHANGES,
+  revenue: API_CHANGES,
+  "nycedc-contracts": API_CHANGES,
+  "nycha-contracts": API_CHANGES,
+  "smart-search": SMART_SEARCH_CHANGES,
+};
+
+/** The provenance block for one answer from `tool`. Throws if DATA-SOURCES.json has no
+ * source for it (assertEveryToolExplained in the tests keeps that from shipping). A source that
+ * about_data says BetaNYC modified gets the same answer here: "BetaNYC modified this data: …
+ * Official record: …" (module 1.5.2's changedByBetanyc), never a bare "Source: …". */
+export function answerProvenance(tool: string, now: Date = new Date()) {
+  const s = DATA_SOURCES?.sources.find((x) => x.valid && x.tools.includes(tool));
+  if (!s?.source_name || !s.publisher?.name || !s.source_url) {
+    throw new Error(`DATA-SOURCES.json has no usable source for ${tool}`);
+  }
+  const kind = officialKind(s.official === true, s.changes?.changed === true, s.changes?.steps ?? []);
+  let changedByBetanyc: { kind: Exclude<typeof kind, "published-as-is">; detail: string } | undefined;
+  if (kind !== "published-as-is") {
+    const detail = CHANGES_BY_SOURCE[s.id ?? ""];
+    if (!detail) throw new Error(`No one-line description of BetaNYC's changes for source ${s.id}`);
+    changedByBetanyc = { kind, detail };
+  }
+  return provenance(
+    { sourceName: s.source_name, publisher: s.publisher.name, sourceUrl: s.source_url, kind: "live", changedByBetanyc },
+    now
+  );
 }
 
-function textResult(json: unknown): CallToolResult {
-  return { content: [{ type: "text", text: withDisclaimer(json) }] };
-}
-
-function errorResult(json: unknown): CallToolResult {
+/** A data answer: the JSON (with its `source` object), then the source line and the disclaimer. */
+function textResult(tool: string, json: Record<string, unknown>): CallToolResult {
+  const p = answerProvenance(tool);
   return {
-    content: [{ type: "text", text: JSON.stringify(json, null, 2) }],
-    isError: true,
+    content: [
+      { type: "text", text: `${JSON.stringify({ ...json, source: p.provenance }, null, 2)}\n\n${p.text}${DISCLAIMER}` },
+    ],
   };
 }
+
+/** One plain sentence on which records an answer holds and how to get the rest (#54). */
+export function showing(total: number, page: number, pageSize: number, returned: number): string {
+  const n = (x: number) => x.toLocaleString("en-US");
+  if (total === 0) return "No records match.";
+  const from = (page - 1) * pageSize + 1;
+  if (returned === 0) {
+    const last = Math.ceil(total / pageSize);
+    return `No records on page ${n(page)}: there are ${n(total)}, so the last page at page_size=${n(pageSize)} is ${n(last)}.`;
+  }
+  const to = from + returned - 1;
+  const rest = total - to;
+  return rest > 0
+    ? `Showing records ${n(from)} to ${n(to)} of ${n(total)}. For the next ${n(Math.min(pageSize, rest))}, call again with page=${n(page + 1)} (page_size up to 20,000).`
+    : `Showing records ${n(from)} to ${n(to)} of ${n(total)}, the last of them.`;
+}
+
+const ISSUES_URL = "https://github.com/BetaNYC/nyc-checkbook-mcp/issues";
+
+/** What to try after a Checkbook NYC failure, by kind (#57). Non-XML replies (#39) carry
+ * their own advice in the message. */
+function whatToTry(err: CheckbookApiError): string {
+  switch (err.kind) {
+    case "network":
+      return "Try again in a minute. If it keeps failing, Checkbook NYC may be down.";
+    case "redirect":
+      return "Wait several minutes before trying again, and do not repeat the call right away.";
+    case "refused":
+    case "locked":
+      return ""; // refusedMessage and lockedMessage already say stop and report (#51)
+    case "http":
+      return (err.status ?? 0) >= 500
+        ? "Checkbook NYC had a problem. Try again in a few minutes."
+        : "Check the values sent against the tool's parameter descriptions.";
+    case "api":
+      return "Check each value against the tool's parameter descriptions; the API's own message is below.";
+    case "silent-empty":
+      return "Try different filters, for example without fiscal_year or with a date range.";
+    default:
+      return "";
+  }
+}
+
+/** Every failure, as an isError result: what went wrong, what to try, and the API's own
+ * words cut to 500 characters (toolError from the shared module, #57). No stack traces, no
+ * file paths: an error this server did not write itself gives only its first plain line
+ * (errorSummary). */
+export function failure(err: unknown): CallToolResult {
+  if (err instanceof CheckbookApiError) {
+    const msg = [err.message, whatToTry(err)].filter(Boolean).join(" ");
+    return toolError(msg, { upstreamBody: err.upstream }) as CallToolResult;
+  }
+  // Our own guidance (a refused input) is already a sentence that says what to do. Anything
+  // else is a bug in this server.
+  return toolError(
+    err instanceof GuidanceError
+      ? err.message
+      : `The tool failed: ${errorSummary(err).replace(/\.$/, "")}. Try again; if it keeps failing, report it at ${ISSUES_URL}`
+  ) as CallToolResult;
+}
+
+/** An input this server refuses on purpose, with guidance (not a bug). */
+export class GuidanceError extends Error {}
 
 async function guard(fn: () => Promise<CallToolResult>): Promise<CallToolResult> {
   try {
     return await fn();
   } catch (err) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error: ${err instanceof Error ? err.message : String(err)}`,
-        },
-      ],
-      isError: true,
-    };
+    return failure(err);
   }
 }
 
@@ -101,8 +201,12 @@ export function rangeCriterion(
 // caller's context window, not this number, which is why the default stays 50.
 export const MAX_RECORDS_PER_CALL = 20_000;
 
+/** Rows get_contract asks for (one per contract version or line). */
+export const GET_CONTRACT_MAX = 10;
+
 
 export async function runSearch(
+  tool: string,
   domain: DataDomain,
   columns: string[],
   criteria: Criteria[],
@@ -127,12 +231,13 @@ export async function runSearch(
   // (issue #21), which guard() turns into an isError result. So total_records is
   // only ever reported for a genuine success — a real 0 means "no matching
   // records", never "the request failed".
-  return textResult({
+  return textResult(tool, {
     ...extra,
     total_records: result.total_records,
     page,
     page_size: pageSize,
     has_more: result.total_records > page * pageSize,
+    showing: showing(result.total_records, page, pageSize, result.records.length),
     records: result.records,
   });
 }
@@ -159,7 +264,19 @@ const pageSizeSchema = z
   .default(50)
   .describe("Results per page (default: 50, max: 20000)");
 const fiscalYearSchema = z.string().optional().describe("Fiscal year, e.g. '2024'");
-const agencyCodeSchema = z.string().optional().describe("3-digit agency code");
+// Agency codes, vendor names, contract field names and the fiscal year are explained in full
+// once, in the server instructions (src/betanyc.ts, CHECKBOOK_GUIDE) (#59). Some AI apps ignore
+// server instructions, so each tool that needs one also carries a short, must-have version.
+// Every agency code example is a checked one (test/agency-codes.test.mjs).
+const AGENCY_CODE = "3-digit agency code, e.g. '056' for NYPD, '040' for Education";
+/** Where to look up a contract by vendor name, said on the tools that take a vendor. */
+const VENDOR_NAME_TIP = "To find contracts by vendor name: search_spending payee_name, then its contract_id.";
+/** Vendor names on contracts: a product is often sold through a reseller. */
+const RESELLER_TIP = "The vendor may be a reseller, not the product's maker.";
+/** Record field names by contract shape. */
+const CONTRACT_FIELDS =
+  "Fields: registered expense/all use prime_contract_*; registered revenue and pending use plain names (contract_id, purpose).";
+const agencyCodeSchema = z.string().optional().describe(AGENCY_CODE);
 
 // ─── Contracts criteria (exported for tests) ─────────────────────────────────
 
@@ -625,10 +742,14 @@ export function registerTools(server: McpServer): void {
   registerBetanycTools(server, { smartSearch: smartSearchEnabled() });
 }
 
+// Every Checkbook tool only reads, and calls the live Checkbook NYC API, so each one is
+// readOnlyHint: true, openWorldHint: true (#50). smart_search too: when it is turned on, it
+// calls the checkbooknyc.com website. test/annotations.test.mjs fails on a tool without them.
 function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "smart_search",
     {
+      annotations: readOnlyAnnotations(true, "Smart search (off by default)"),
       description:
         "DISABLED BY DEFAULT (opt in with CHECKBOOK_ENABLE_SMART_SEARCH=1). The " +
         "checkbooknyc.com /smart_search endpoint is not a supported Checkbook NYC API " +
@@ -655,25 +776,17 @@ function registerCheckbookTools(server: McpServer): void {
         // Hard-gate (issue #25): do not touch the unsupported endpoint unless the
         // operator has explicitly opted in. Fail fast BEFORE any network call.
         if (!smartSearchEnabled()) {
-          return errorResult({
-            query,
-            available: false,
-            reason: SMART_SEARCH_DISABLED_MESSAGE,
-          });
+          throw new GuidanceError(SMART_SEARCH_DISABLED_MESSAGE);
         }
         const result = await smartSearch(query, limit ?? 25);
         if (!result.available) {
-          return errorResult({
-            query,
-            available: false,
-            reason: result.reason,
-            fallback: result.fallback,
-          });
+          throw new GuidanceError(`Smart search is not available: ${result.reason?.replace(/\.$/, "")}. ${result.fallback ?? ""}`.trim());
         }
-        return textResult({
+        return textResult("smart_search", {
           query,
           total_results: result.total,
           returned: result.results.length,
+          showing: showing(result.total, 1, limit ?? 25, result.results.length),
           results: result.results,
         });
       })
@@ -682,12 +795,11 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_contracts",
     {
+      annotations: readOnlyAnnotations(true, "Search contracts"),
       description:
         "Search NYC registered and pending contracts with structured filters. " +
         "Filter by agency, vendor_code, contract ID, date range, amount range, industry, MWBE category, and more. " +
-        "NOTE: the contracts API has NO vendor-name filter — vendors are filtered only by vendor_code. " +
-        "To find contracts by vendor NAME, use search_spending (payee_name) for checks paid to a named vendor. " +
-        "Many contracts are held by resellers, so a product/software name may not match the contract's own vendor. " +
+        "No vendor-name filter (vendor_code only). " + VENDOR_NAME_TIP + " " +
         "KNOWN API LIMITATION: registered revenue contracts (category 'revenue') with fiscal_year return no rows " +
         "from Checkbook NYC (a match count, no records), so the tool refuses that combination without sending a request; omit fiscal_year and filter by dates instead.",
       inputSchema: strictSchema({
@@ -701,25 +813,18 @@ function registerCheckbookTools(server: McpServer): void {
           .optional()
           .default("expense")
           .describe(
-            "Contract category (default: expense). Record field names follow the API's own " +
-              "domain and differ by shape: registered expense/all use prime_contract_* names " +
-              "(prime_contract_id, prime_contract_purpose, ...); registered revenue and every " +
-              "pending search use plain names (contract_id, purpose, agency, ...). Records are " +
-              "returned as the API sends them, not normalized."
+            "Contract category (default: expense). " + CONTRACT_FIELDS
           ),
         fiscal_year: fiscalYearSchema,
         agency_code: z
           .string()
           .optional()
-          .describe("3-digit agency code, e.g. '858' for OTI/DoITT, '002' for DoF"),
+          .describe(AGENCY_CODE),
         vendor_name: z
           .string()
           .optional()
           .describe(
-            "NOT SUPPORTED as a contracts filter — the Checkbook API has no vendor-name " +
-              "parameter and no name→code lookup. Supplying this returns actionable guidance " +
-              "(use vendor_code, or search_spending with payee_name for name search). " +
-              "Prefer vendor_code."
+            "NOT SUPPORTED: no vendor-name filter. Use vendor_code. " + VENDOR_NAME_TIP
           ),
         vendor_code: z.string().optional().describe("Vendor identification code (the only vendor filter for contracts)"),
         contract_id: z
@@ -820,14 +925,15 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() => {
         if (input.vendor_name) {
-          throw new Error(VENDOR_NAME_UNSUPPORTED_MESSAGE);
+          throw new GuidanceError(VENDOR_NAME_UNSUPPORTED_MESSAGE);
         }
         const criteria = contractsCriteria(input);
         if (isRegisteredRevenueFiscalYear(criteria)) {
           // Fail fast, no network call (#42 upstream limitation).
-          throw new Error(REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE);
+          throw new GuidanceError(REVENUE_FISCAL_YEAR_UNSUPPORTED_MESSAGE);
         }
         return runSearch(
+          "search_contracts",
           "Contracts",
           contractsColumns(criteria, input.include_sub_vendors),
           criteria,
@@ -840,11 +946,11 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "get_contract",
     {
+      annotations: readOnlyAnnotations(true, "Get one contract"),
       description:
         "Look up a single NYC contract by its contract ID. Returns full contract details. " +
         "Use this after finding a contract ID via search_contracts or search_spending. " +
-        "Field names follow status/category, as in search_contracts: registered expense uses " +
-        "prime_contract_* names, registered revenue and pending use plain names (contract_id, purpose, ...).",
+        CONTRACT_FIELDS,
       inputSchema: strictSchema({
         contract_id: z
           .string()
@@ -871,7 +977,7 @@ function registerCheckbookTools(server: McpServer): void {
         const result = await callCheckbookApi({
           type_of_data: "Contracts",
           records_from: 1,
-          max_records: 10,
+          max_records: GET_CONTRACT_MAX,
           criteria,
           // Per (status, category), as search_contracts does (#42). Sending the
           // expense list for category=revenue failed every revenue lookup.
@@ -879,20 +985,35 @@ function registerCheckbookTools(server: McpServer): void {
         });
         // No `error` field: an upstream failure throws (issue #21) and is
         // surfaced by guard(), so `records` is only ever a genuine result set.
-        return textResult({ contract_id, records: result.records });
+        // Up to GET_CONTRACT_MAX rows (one per version or line), with the count, so a
+        // contract with more is never cut off silently (#54).
+        return textResult("get_contract", {
+          contract_id,
+          total_records: result.total_records,
+          showing:
+            result.total_records > result.records.length
+              ? `Showing the first ${result.records.length} of ${result.total_records} records for this contract. ` +
+                `For all of them, use search_contracts with contract_id="${contract_id}" and page/page_size.`
+              : showing(result.total_records, 1, GET_CONTRACT_MAX, result.records.length),
+          records: result.records,
+        });
       })
   );
 
   server.registerTool(
     "search_spending",
     {
+      annotations: readOnlyAnnotations(true, "Search spending"),
       description:
         "Search NYC spending (check) records. Filter by agency, payee, contract, date range, amount, or expense category. " +
         "Either fiscal_year or issue_date_from is required.",
       inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
         agency_code: agencyCodeSchema,
-        payee_name: z.string().optional().describe("Payee (vendor) name"),
+        payee_name: z
+          .string()
+          .optional()
+          .describe("Payee (vendor) name. The way to find a vendor's contracts: read contract_id from the checks."),
         contract_id: z.string().optional().describe("Filter spending by contract ID"),
         issue_date_from: z
           .string()
@@ -914,7 +1035,7 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() => {
         if (!input.fiscal_year && !input.issue_date_from) {
-          throw new Error("Either fiscal_year or issue_date_from is required.");
+          throw new GuidanceError("Either fiscal_year or issue_date_from is required. Give one, for example fiscal_year=\"2026\".");
         }
         const criteria = valueCriteria(input, {
           fiscal_year: "fiscal_year",
@@ -931,13 +1052,14 @@ function registerCheckbookTools(server: McpServer): void {
         ]) {
           if (range) criteria.push(range);
         }
-        return runSearch("Spending", DEFAULT_COLUMNS["Spending"], criteria, input.page, input.page_size);
+        return runSearch("search_spending", "Spending", DEFAULT_COLUMNS["Spending"], criteria, input.page, input.page_size);
       })
   );
 
   server.registerTool(
     "search_budget",
     {
+      annotations: readOnlyAnnotations(true, "Search budget"),
       description: "Search NYC budget data by agency, department, fiscal year, or budget code.",
       inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
@@ -951,6 +1073,7 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() =>
         runSearch(
+          "search_budget",
           "Budget",
           DEFAULT_COLUMNS["Budget"],
           // The Budget domain's year criterion is named "year", not "fiscal_year".
@@ -969,6 +1092,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_payroll",
     {
+      annotations: readOnlyAnnotations(true, "Search payroll"),
       description:
         "Search NYC payroll records by agency, job title, pay frequency, pay date, or amount range. " +
         "Requires fiscal_year or calendar_year. " +
@@ -986,7 +1110,7 @@ function registerCheckbookTools(server: McpServer): void {
         agency_code: z
           .string()
           .optional()
-          .describe("3-digit agency code, e.g. '846' for Parks"),
+          .describe(AGENCY_CODE),
         title: z.string().optional().describe("Job title (partial match)"),
         pay_frequency: z
           .string()
@@ -1003,7 +1127,7 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() => {
         if (!input.fiscal_year && !input.calendar_year) {
-          throw new Error("Either fiscal_year or calendar_year is required.");
+          throw new GuidanceError("Either fiscal_year or calendar_year is required. Give one, for example fiscal_year=\"2026\".");
         }
         const criteria = valueCriteria(input, {
           fiscal_year: "fiscal_year",
@@ -1016,13 +1140,14 @@ function registerCheckbookTools(server: McpServer): void {
         if (payDate) criteria.push(payDate);
         const amount = rangeCriterion("amount", input.amount_min, input.amount_max, "0", "99999999");
         if (amount) criteria.push(amount);
-        return runSearch("Payroll", DEFAULT_COLUMNS["Payroll"], criteria, input.page, input.page_size);
+        return runSearch("search_payroll", "Payroll", DEFAULT_COLUMNS["Payroll"], criteria, input.page, input.page_size);
       })
   );
 
   server.registerTool(
     "search_revenue",
     {
+      annotations: readOnlyAnnotations(true, "Search revenue"),
       description:
         "Search NYC revenue data by agency, revenue category/class/source, fund class, or fiscal year.",
       inputSchema: strictSchema({
@@ -1044,6 +1169,7 @@ function registerCheckbookTools(server: McpServer): void {
     async (input) =>
       guard(() =>
         runSearch(
+          "search_revenue",
           "Revenue",
           DEFAULT_COLUMNS["Revenue"],
           valueCriteria(input, {
@@ -1065,13 +1191,14 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "get_agency_spending",
     {
+      annotations: readOnlyAnnotations(true, "Agency spending for a year"),
       description:
         "Get all spending for a specific NYC agency in a fiscal year. " +
         "A convenience wrapper around search_spending for agency-level financial overview.",
       inputSchema: strictSchema({
         agency_code: z
           .string()
-          .describe("3-digit agency code, e.g. '858' for OTI/DoITT, '040' for NYPD"),
+          .describe(AGENCY_CODE),
         fiscal_year: z.string().describe("Fiscal year, e.g. '2024'"),
         page: pageSchema,
         page_size: pageSizeSchema,
@@ -1080,6 +1207,7 @@ function registerCheckbookTools(server: McpServer): void {
     async ({ agency_code, fiscal_year, page, page_size }) =>
       guard(() =>
         runSearch(
+          "get_agency_spending",
           "Spending",
           DEFAULT_COLUMNS["Spending"],
           [
@@ -1096,6 +1224,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_nycedc_contracts",
     {
+      annotations: readOnlyAnnotations(true, "Search NYCEDC contracts"),
       description:
         "Search NYCEDC / Other Government Entities (OGE) contracts (Checkbook domain Contracts_OGE). " +
         "These are separate from citywide contracts and cover economic-development-corporation and " +
@@ -1107,7 +1236,7 @@ function registerCheckbookTools(server: McpServer): void {
         vendor_name: z
           .string()
           .optional()
-          .describe("Prime vendor name (first 3 characters matched)"),
+          .describe(`Prime vendor name (first 3 characters matched). ${RESELLER_TIP}`),
         contract_id: z.string().optional().describe("Contract number"),
         entity_contract_number: z
           .string()
@@ -1139,6 +1268,7 @@ function registerCheckbookTools(server: McpServer): void {
       guard(() => {
         const criteria = nycedcContractsCriteria(input);
         return runSearch(
+          "search_nycedc_contracts",
           "Contracts_OGE",
           nycedcContractsColumns(criteria),
           criteria,
@@ -1151,6 +1281,7 @@ function registerCheckbookTools(server: McpServer): void {
   server.registerTool(
     "search_nycha_contracts",
     {
+      annotations: readOnlyAnnotations(true, "Search NYCHA contracts"),
       description:
         "Search NYCHA (New York City Housing Authority) contracts (Checkbook domain Contracts_NYCHA). " +
         "These are separate from citywide contracts and are reported at release / line-item granularity " +
@@ -1161,7 +1292,7 @@ function registerCheckbookTools(server: McpServer): void {
         "fiscal_year (one call per year). start_date, end_date, and approved_date are per record.",
       inputSchema: strictSchema({
         fiscal_year: fiscalYearSchema,
-        vendor_name: z.string().optional().describe("Vendor name (contains match)"),
+        vendor_name: z.string().optional().describe(`Vendor name (contains match). ${RESELLER_TIP}`),
         vendor_code: z.string().optional().describe("Vendor number / code"),
         contract_id: z.string().optional().describe("Contract ID"),
         purchase_order_type: z.string().optional().describe("Purchase order type code"),
@@ -1197,6 +1328,7 @@ function registerCheckbookTools(server: McpServer): void {
       guard(() => {
         const criteria = nychaContractsCriteria(input);
         return runSearch(
+          "search_nycha_contracts",
           "Contracts_NYCHA",
           nychaContractsColumns(criteria),
           criteria,

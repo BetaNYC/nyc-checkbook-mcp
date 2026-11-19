@@ -3,62 +3,105 @@
  * Exceeding it puts us into a persistent blocked state at their Imperva edge
  * that presents as a 403 on every later request, including from a browser
  * (observed 2026-07-28). These tests guard the pacer that prevents it.
+ *
+ * The rule: one request at a time, process-wide, and each starts at least 1.1 s after the
+ * previous one FINISHED (the reply arrived, or the attempt failed), and after it started.
+ * Most tests run on a virtual clock (test/helpers/upstream.mjs), so the checks are exact:
+ * no timer slack, and a pacer set to 1,050 ms fails them.
  */
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { pace } from "../dist/checkbook.js";
+import { pace, fetchWithRetry, resetUpstreamForTests } from "../dist/checkbook.js";
+import { freshUpstream } from "./helpers/upstream.mjs";
 
 const MIN_INTERVAL_MS = 1_100;
-// Timers fire no earlier than requested but may fire late; allow a small
-// tolerance below the nominal interval so a busy CI box does not flake.
-const TOLERANCE_MS = 50;
+const OK_XML =
+  "<response><status><result>success</result></status>" +
+  "<result_records><record_count>0</record_count></result_records></response>";
 
-test("spaces sequential calls at least 1s apart", async () => {
-  const stamps = [];
-  for (let i = 0; i < 3; i++) {
-    await pace();
-    stamps.push(Date.now());
-  }
+let clock;
+beforeEach(() => {
+  clock = freshUpstream();
+});
 
-  for (let i = 1; i < stamps.length; i++) {
-    const gap = stamps[i] - stamps[i - 1];
-    assert.ok(
-      gap >= MIN_INTERVAL_MS - TOLERANCE_MS,
-      `gap ${i} was ${gap}ms, expected >= ${MIN_INTERVAL_MS - TOLERANCE_MS}ms`
-    );
+/** Take a turn, hold it for `busyMs` (the request in flight), end it. Returns [start, end]. */
+async function request(busyMs) {
+  const endTurn = await pace();
+  const start = clock.now();
+  await clock.sleep(busyMs);
+  const end = clock.now();
+  endTurn();
+  return [start, end];
+}
+
+test("each request starts at least 1.1 s after the previous one finished", async () => {
+  const spans = [];
+  for (const busy of [0, 700, 2_500, 40]) spans.push(await request(busy));
+  for (let i = 1; i < spans.length; i++) {
+    const sinceEnd = spans[i][0] - spans[i - 1][1];
+    const sinceStart = spans[i][0] - spans[i - 1][0];
+    assert.ok(sinceEnd >= MIN_INTERVAL_MS, `request ${i} started ${sinceEnd} ms after the previous one finished`);
+    assert.ok(sinceStart >= MIN_INTERVAL_MS, `request ${i} started ${sinceStart} ms after the previous one started`);
   }
 });
 
-test("serializes concurrent callers instead of letting them burst", async () => {
-  // This is the case that actually bit us: several tool calls in flight at once.
-  // Without serialization all three would resolve immediately together.
-  const stamps = [];
-  await Promise.all(
-    Array.from({ length: 3 }, () => pace().then(() => stamps.push(Date.now())))
-  );
-
-  stamps.sort((a, b) => a - b);
-  for (let i = 1; i < stamps.length; i++) {
-    const gap = stamps[i] - stamps[i - 1];
-    assert.ok(
-      gap >= MIN_INTERVAL_MS - TOLERANCE_MS,
-      `concurrent gap ${i} was ${gap}ms, expected >= ${MIN_INTERVAL_MS - TOLERANCE_MS}ms`
-    );
+test("concurrent callers go one at a time, each 1.1 s after the previous finished", async () => {
+  // The case that actually bit us: several tool calls in flight at once.
+  const spans = await Promise.all([500, 500, 500, 500].map((busy) => request(busy)));
+  spans.sort((a, b) => a[0] - b[0]);
+  for (let i = 1; i < spans.length; i++) {
+    const gap = spans[i][0] - spans[i - 1][1];
+    assert.ok(gap >= MIN_INTERVAL_MS, `concurrent request ${i} started ${gap} ms after the previous one finished`);
   }
 });
 
-test("a rejected predecessor does not poison the chain", async () => {
-  // pace() chains every call off the previous one. If the chain is built with only
-  // an onFulfilled handler, a single rejection anywhere leaves paceChain rejected
-  // forever and every later request fails with an unrelated error until restart.
-  // Reach in and reject the shared chain the only way a caller can observe it:
-  // by racing a rejected promise through the same slot.
-  await pace();
-  const before = Date.now();
-  const results = await Promise.allSettled([pace(), pace()]);
-  assert.ok(
-    results.every((r) => r.status === "fulfilled"),
-    `pace() must keep resolving; got ${JSON.stringify(results.map((r) => r.status))}`
+test("the next turn waits while a request is still in flight, however long it takes", async () => {
+  const endFirst = await pace();
+  let second = false;
+  const next = pace().then((end) => {
+    second = true;
+    return end;
+  });
+  for (let i = 0; i < 20; i++) {
+    await clock.sleep(5_000); // a slow reply: 100 s pass on the clock
+    await new Promise((r) => setImmediate(r));
+  }
+  assert.equal(second, false, "no second request while the first has not finished");
+  endFirst();
+  (await next)();
+  assert.equal(second, true);
+});
+
+test("a failed attempt ends its turn, so later requests are not stuck", async () => {
+  const policy = { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1, deadlineMs: 60_000, timeoutMs: 1_000 };
+  await assert.rejects(() =>
+    fetchWithRetry("http://x/api", {}, policy, {
+      fetchImpl: async () => {
+        throw new TypeError("fetch failed");
+      },
+      makeSignal: () => undefined,
+    })
   );
-  assert.ok(Date.now() - before >= MIN_INTERVAL_MS - TOLERANCE_MS, "and must still space them");
+  const res = await fetchWithRetry("http://x/api", {}, policy, {
+    fetchImpl: async () => new Response(OK_XML, { status: 200 }),
+    makeSignal: () => undefined,
+  });
+  assert.equal(res.status, 200);
+});
+
+test("real clock: 1.1 s or more apart, measured on the monotonic clock, even when the wall clock jumps", async () => {
+  resetUpstreamForTests(); // the real clock (performance.now and setTimeout)
+  const realDateNow = Date.now;
+  try {
+    (await pace())();
+    const finished = performance.now();
+    // The wall clock jumps 10 s ahead. A pacer on Date.now would think the time had passed.
+    const jump = realDateNow() + 10_000;
+    Date.now = () => jump;
+    (await pace())();
+    const gap = performance.now() - finished;
+    assert.ok(gap >= MIN_INTERVAL_MS, `second request ${gap.toFixed(1)} ms after the first finished`);
+  } finally {
+    Date.now = realDateNow;
+  }
 });

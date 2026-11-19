@@ -330,7 +330,11 @@ export function formatReport({ ok, findings, passed }, notCovered = NOT_COVERED)
 }
 
 async function main(argv) {
-  const file = resolve(argv[0] ?? "probe-results.txt");
+  // A path given on the command line is relative to where the caller ran npm:
+  // `npm run` changes cwd to the package root, and sets INIT_CWD to the directory
+  // npm was invoked from (npm docs, "scripts", INIT_CWD). The default file is the
+  // one probe-api-spec.sh writes at the package root, so it stays relative to cwd (#43c).
+  const file = argv[0] ? resolve(process.env.INIT_CWD ?? process.cwd(), argv[0]) : resolve("probe-results.txt");
   let text;
   try {
     text = readFileSync(file, "utf8");

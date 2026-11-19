@@ -1,0 +1,159 @@
+{
+  "_readme": [
+    "Fixed question set for nyc-checkbook-mcp, written 2026-11-18 before scoring (#55). Each question is one a person has asked or would ask, and each has a known right answer.",
+    "Offline: every question runs against a recorded reply (`fixture`, a file under test/fixtures/, most of them real Checkbook NYC replies with provenance in the file) or a generated success reply (`reply`: count and rows). Nothing reaches the network.",
+    "The right answer is what this server must do with that reply: which request it sends (or that it sends none), and what it tells the person. The data in the replies is not re-checked here; the tests and scripts/check-default-columns.mjs cover the API side.",
+    "Checks: `requests` (exact number sent), `sent_includes` / `sent_excludes` (text in the request XML), `is_error`, `text` (regexes the answer must match), `field` ([dotted path, value] pairs in the answer's JSON).",
+    "Run: npm run eval (writes eval/runs/YYYY-MM-DD.json). Every check must pass; a failing question is a bug or a wrong expectation, never a skip."
+  ],
+  "questions": [
+    {
+      "id": "Q01",
+      "q": "How many budget lines does the Parks Department have in FY2026, and what is the first one's adopted amount?",
+      "tool": "search_budget",
+      "args": { "agency_code": "846", "fiscal_year": "2026", "page_size": 2 },
+      "fixture": "budget-response.xml",
+      "check": {
+        "requests": 1,
+        "sent_includes": ["<name>year</name><type>value</type><value>2026</value>", "<name>agency_code</name><type>value</type><value>846</value>"],
+        "sent_excludes": ["<name>fiscal_year</name>"],
+        "field": [["total_records", 12397], ["records.0.agency", "Department of Parks and Recreation"], ["records.0.budget_amounts.adopted", "44733327"], ["records.0.budget_code", "2801"]],
+        "text": ["Showing records 1 to 2 of 12,397\\. For the next 2, call again with page=2"]
+      },
+      "note": "The Budget domain's year criterion is `year`, not `fiscal_year` (verified live 2026-07-06). Amounts stay strings, nested as the API sends them. Path corrected after the first run (eval/runs/2026-11-18-first-run.txt): it was records.0.adopted; the value is unchanged."
+    },
+    {
+      "id": "Q02",
+      "q": "What contracts does Acme Consulting hold with the city?",
+      "tool": "search_contracts",
+      "args": { "vendor_name": "Acme Consulting" },
+      "check": { "requests": 0, "is_error": true, "text": ["no vendor-name filter|filters vendors only by 'vendor_code'", "payee_name"] },
+      "note": "No vendor-name parameter exists; the server must say so and point to search_spending, not return unrelated contracts (#17, #19)."
+    },
+    {
+      "id": "Q03",
+      "q": "What contracts did the city sign with vendor 'Acme' (using the parameter name a model guesses)?",
+      "tool": "search_contracts",
+      "args": { "vendor": "Acme" },
+      "check": { "requests": 0, "is_error": true, "text": ["vendor_name"] },
+      "note": "#19: an invented `vendor` key once returned 5,755,099 unrelated rows."
+    },
+    {
+      "id": "Q04",
+      "q": "Which registered revenue contracts were active in FY2025?",
+      "tool": "search_contracts",
+      "args": { "category": "revenue", "fiscal_year": "2025" },
+      "check": { "requests": 0, "is_error": true, "text": ["known Checkbook NYC API limitation", "Omit fiscal_year and filter by date range"] },
+      "note": "#42: the API counts matches for this shape and returns no rows."
+    },
+    {
+      "id": "Q05",
+      "q": "List registered revenue contracts (any year).",
+      "tool": "search_contracts",
+      "args": { "category": "revenue", "page_size": 1 },
+      "fixture": "contracts-revenue-silent-empty.xml",
+      "check": { "requests": 1, "is_error": true, "text": ["matched 12293 Contracts record\\(s\\) but returned none", "Do not conclude that no records exist"] },
+      "note": "Real reply 2026-10-16: 12,293 matched, no rows. It must never read as an empty result."
+    },
+    {
+      "id": "Q06",
+      "q": "Show me revenue contract RCT186620208202671.",
+      "tool": "get_contract",
+      "args": { "contract_id": "RCT186620208202671", "category": "revenue" },
+      "fixture": "contracts-revenue-contract-id-only.xml",
+      "check": {
+        "requests": 1,
+        "sent_includes": ["<value>revenue</value>", "<value>RCT186620208202671</value>", "<column>contract_id</column>"],
+        "sent_excludes": ["<column>prime_contract_id</column>", "<column>contract_class</column>"],
+        "field": [["records.0.contract_id", "RCT186620208202671"], ["total_records", 12293]],
+        "text": ["Showing the first 1 of 12293 records for this contract"]
+      },
+      "note": "Revenue contracts use plain column names (#42). The fixture is a real reply whose count covers the whole revenue set, so the count line must say more exist."
+    },
+    {
+      "id": "Q07",
+      "q": "What did the NYPD spend in FY2025?",
+      "tool": "get_agency_spending",
+      "args": { "agency_code": "056", "fiscal_year": "2025" },
+      "reply": { "count": 3160063, "rows": 50 },
+      "check": {
+        "requests": 1,
+        "sent_includes": ["<type_of_data>Spending</type_of_data>", "<value>056</value>", "<name>fiscal_year</name><type>value</type><value>2025</value>", "<max_records>50</max_records>"],
+        "field": [["agency_code", "056"], ["total_records", 3160063], ["has_more", true], ["source.publisher", "Office of the New York City Comptroller"], ["source.as_of_kind", "retrieved"]],
+        "text": ["For the next 50, call again with page=2", "BetaNYC modified this data: .*Official record: .*Office of the New York City Comptroller.*, https://www\\.checkbooknyc\\.com/data-feeds/api"]
+      },
+      "note": "056 is NYPD; 040 is Education (#37). The count is the FY2025 Spending total recorded in #32."
+    },
+    {
+      "id": "Q08",
+      "q": "How much did the city pay in overtime to Parks staff in calendar year 2025?",
+      "tool": "search_payroll",
+      "args": { "calendar_year": "2025", "agency_code": "846" },
+      "reply": { "count": 0, "rows": 0 },
+      "check": {
+        "requests": 1,
+        "sent_includes": ["<type_of_data>Payroll</type_of_data>", "<name>calendar_year</name>", "<column>overtime_payments</column>"],
+        "field": [["total_records", 0]],
+        "text": ["No records match\\."]
+      },
+      "note": "A real zero is a success with total_records 0 and says so, not an error (#21)."
+    },
+    {
+      "id": "Q09",
+      "q": "What are the payroll records for Parks with no year given?",
+      "tool": "search_payroll",
+      "args": { "agency_code": "846" },
+      "check": { "requests": 0, "is_error": true, "text": ["Either fiscal_year or calendar_year is required"] },
+      "note": "The API needs a year; the server refuses before spending a request."
+    },
+    {
+      "id": "Q10",
+      "q": "Which NYCHA contracts were in FY2024, with the year on each?",
+      "tool": "search_nycha_contracts",
+      "args": { "fiscal_year": "2024" },
+      "reply": { "count": 2, "rows": 2 },
+      "check": { "requests": 1, "sent_includes": ["<type_of_data>Contracts_NYCHA</type_of_data>", "<column>year</column>"], "field": [["total_records", 2]] },
+      "note": "#40: NYCHA's `year` column is valid only with fiscal_year."
+    },
+    {
+      "id": "Q11",
+      "q": "Which NYCHA contracts does vendor ACME hold, any year?",
+      "tool": "search_nycha_contracts",
+      "args": { "vendor_name": "ACME" },
+      "reply": { "count": 1, "rows": 1 },
+      "check": { "requests": 1, "sent_includes": ["<name>vendor_name</name>"], "sent_excludes": ["<column>year</column>"] },
+      "note": "#40: sending `year` without fiscal_year fails the whole call."
+    },
+    {
+      "id": "Q12",
+      "q": "Which NYCEDC contracts are there, all years, with their APT PIN?",
+      "tool": "search_nycedc_contracts",
+      "args": {},
+      "reply": { "count": 1, "rows": 1 },
+      "check": { "requests": 1, "sent_includes": ["<type_of_data>Contracts_OGE</type_of_data>", "<column>apt_pin</column>"] },
+      "note": "#40: OGE `apt_pin` is valid only without fiscal_year."
+    },
+    {
+      "id": "Q13",
+      "q": "Who are the subcontractors on DOT's FY2025 registered contracts?",
+      "tool": "search_contracts",
+      "args": { "agency_code": "841", "fiscal_year": "2025", "include_sub_vendors": true },
+      "reply": { "count": 1, "rows": 1 },
+      "check": {
+        "requests": 1,
+        "sent_includes": ["<column>sub_vendor</column>", "<column>sub_vendor_mwbe_category</column>", "<value>841</value>"],
+        "sent_excludes": ["<column>sub_contract_registration_date</column>"]
+      },
+      "note": "v1.6.1: sub_contract_registration_date is documented but rejected live, and broke every sub-vendor search."
+    },
+    {
+      "id": "Q14",
+      "q": "How much did the city pay ASSOCIATION OF COMMUNITY EMPLOYMENT PROGRAMS FOR THE HOMELESS in FY2026?",
+      "tool": "search_spending",
+      "args": { "payee_name": "ASSOCIATION OF COMMUNITY EMPLOYMENT PROGRAMS FOR THE HOMELESS", "fiscal_year": "2026" },
+      "fixture": "sqlstate-timeout.txt",
+      "check": { "requests": 1, "is_error": true, "text": ["server_timeout", "not \"no records\"", "shorter payee_name"] },
+      "note": "Real reply 2026-10-23 (#39): Checkbook's database timed out. It must not read as zero payments."
+    }
+  ]
+}

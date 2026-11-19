@@ -69,6 +69,10 @@ Exposes 12 tools over MCP:
 | `about_betanyc` | Who built this server, where to report a bug in this server or ask for a new feature, and BetaNYC's links |
 | `about_data` | Where each kind of data comes from, from [DATA-SOURCES.json](DATA-SOURCES.json): the publisher, whether it is an official record, how current it is, terms and credit line, where to check a figure and where to report an error (filter by topic or tool name) |
 
+Every answer names its source and publisher, links to the Checkbook NYC API page, and gives the time it was fetched (a `source` object and a line after the JSON). `about_data` says BetaNYC modified this data (it turns XML into JSON, asks for fewer fields and trims spaces from values), so that line says so too: "BetaNYC modified this data: … This copy should not be considered the official record. Fetched … Official record: …". Every list says which records it holds, of how many, and which `page` to ask for next (a `showing` sentence).
+
+Every tool only reads data, and says so to your AI app: each declares MCP tool annotations (`readOnlyHint: true`; `openWorldHint: true` on the Checkbook tools, which call the live API).
+
 > **Finding a vendor by name?** The contracts API filters vendors only by `vendor_code` (there is no name lookup). Use `search_spending(payee_name="…")` to find checks paid to a named vendor. Note that many NYC contracts are held by resellers, so a software/product name may not match the contract's own vendor.
 
 ---
@@ -102,7 +106,7 @@ Search registered or pending NYC contracts with structured filters.
 | `contract_type` | string | no | — | Contract type code |
 | `include_sub_vendors` | boolean | no | `false` | Append sub-vendor / subcontractor detail columns (`sub_vendor`, `sub_vendor_mwbe_category`, `sub_contract_current_amount`, …) to the response. Registered `expense` or `all` only; ignored for `pending` and for `category="revenue"`, whose domains list no sub-vendor columns. |
 | `page` | number | no | `1` | Pagination |
-| `page_size` | number | no | `50` | Results per page (max 1000) |
+| `page_size` | number | no | `50` | Results per page (max 20000) |
 
 **Known API limitation:** registered `revenue` searches with `fiscal_year` return no rows. Checkbook NYC reports a match count but sends no records, whatever columns are requested (live, 2026-10-16). The tool refuses that combination with an error and guidance, without sending a request. Search without `fiscal_year` and narrow by date range instead.
 
@@ -162,7 +166,7 @@ Search NYC spending records (checks issued to vendors).
 | `spending_category` | string | no | — | `"c"` capital, `"e"` expense |
 | `mwbe_category` | string | no | — | M/WBE category code |
 | `page` | number | no | `1` | Pagination |
-| `page_size` | number | no | `50` | Results per page (max 1000) |
+| `page_size` | number | no | `50` | Results per page (max 20000) |
 
 *Either `fiscal_year` or `issue_date_from` is required (enforced).
 
@@ -244,7 +248,7 @@ All spending for a specific agency in a fiscal year.
 
 ```
 get_agency_spending("858", "2025")   // OTI/DoITT
-get_agency_spending("040", "2025")   // NYPD
+get_agency_spending("056", "2025")   // NYPD
 ```
 
 ---
@@ -271,7 +275,7 @@ Results carry `apt_pin` only when you do **not** filter by `fiscal_year`. The AP
 | `start_date_from` / `start_date_to` | string | no | — | YYYY-MM-DD |
 | `end_date_from` / `end_date_to` | string | no | — | YYYY-MM-DD |
 | `page` | number | no | `1` | Pagination |
-| `page_size` | number | no | `50` | Results per page (max 1000) |
+| `page_size` | number | no | `50` | Results per page (max 20000) |
 
 ---
 
@@ -300,7 +304,7 @@ Search NYCHA (New York City Housing Authority) contracts (Checkbook domain `Cont
 | `end_date_from` / `end_date_to` | string | no | — | YYYY-MM-DD |
 | `approved_date_from` / `approved_date_to` | string | no | — | Release approved date range (YYYY-MM-DD) |
 | `page` | number | no | `1` | Pagination |
-| `page_size` | number | no | `50` | Results per page (max 1000) |
+| `page_size` | number | no | `50` | Results per page (max 20000) |
 
 ---
 
@@ -322,21 +326,23 @@ Natural-language questions this MCP can answer today, by persona:
 
 ## Common agency codes
 
+Each code below was checked against Checkbook NYC: one `search_budget` call per code (2026-10-12 and 13, #37), and [Checkbook NYC's agency list](https://www.checkbooknyc.com/ref_code_list/agency) (2026-11-18). `836` (Department of Finance) is checked on that list only. The names are the ones on that list, except `858`: Checkbook NYC still calls it the Department of Information Technology and Telecommunications (DoITT), the agency now named the Office of Technology and Innovation (OTI). Check a code you do not see here the same way: `search_budget(agency_code="…", page_size=1)` and read the `agency` field, or look it up on the list.
+
 | Code | Agency |
 |---|---|
-| `002` | Department of Finance |
-| `040` | Police Department |
+| `002` | Mayoralty |
+| `040` | Department of Education |
+| `056` | Police Department |
 | `057` | Fire Department |
-| `071` | Department of Correction |
-| `072` | Department of Probation |
-| `127` | Department of Education |
-| `346` | Department of Homeless Services |
-| `473` | Department of Social Services |
-| `801` | Department of Citywide Administrative Services |
+| `071` | Department of Homeless Services |
+| `072` | Department of Correction |
+| `127` | Financial Information Services Agency |
+| `801` | Department of Small Business Services |
 | `826` | Department of Environmental Protection |
 | `841` | Department of Transportation |
 | `846` | Department of Parks and Recreation |
-| `856` | Department of Records and Information Services (DORIS) |
+| `836` | Department of Finance |
+| `856` | Department of Citywide Administrative Services |
 | `858` | Office of Technology and Innovation (OTI / DoITT) |
 
 ---
@@ -395,14 +401,30 @@ Or if installed globally:
 
 ### Limits
 
-The NYC Comptroller's office publishes these limits for the Checkbook NYC API. Both were confirmed directly with their team on 2026-07-28.
+The NYC Comptroller's office set these limits for the Checkbook NYC API. Both were confirmed directly with their team on 2026-07-28 and in writing on 2026-07-31. This server follows them by default.
 
 | Limit | Value | How this server handles it |
 |---|---|---|
-| Request rate | **1 request per second** | Enforced internally. Every outbound request is serialized and spaced at least 1.1 seconds apart, process-wide, including retries. |
+| Request rate | **1 request per second**, per IP address, for POST requests to `/api` | Enforced internally. One request at a time, process-wide, retries included. Each starts at least 1.1 seconds after the previous one finished (its reply arrived, or it failed or timed out), timed on the monotonic clock. For a 2xx or 3xx reply, "arrived" means the whole reply, because the server reads it for the bot-check page first. Two copies of this server on one network share the limit, and this server cannot see the other (#28). |
 | Records per call | **20,000** | Accepted as the ceiling for `page_size`. The default stays at 50, because the practical limit for an MCP response is your context window rather than the API. |
 
 **Exceeding the rate limit has consequences beyond a throttle.** The API sits behind an Imperva edge that will place a client into a blocked state that persists well past the burst that caused it, and presents as an HTTP 403 on every subsequent request, including from an ordinary browser on the same network. If you fork this server or write your own client, pace your requests.
+
+Each request times out after 60 seconds. The timeout is longer than usual on purpose: a timed-out request is retried, re-sending a slow query to an edge that blocks bursts.
+
+| Reply | Retried? |
+|---|---|
+| 2xx | No: it is the answer. |
+| 3xx redirect | No: never followed, returned as an error. `smart_search` also says to stop calling Checkbook NYC and to report it. |
+| **403 or 429** | **Never**, not even once, not even with `Retry-After`. The server stops sending anything to Checkbook NYC until it is restarted (see below). |
+| **The bot-check page** (a 2xx or 3xx the server recognizes as it) | **Never.** The same as a 403 or 429: the server stops until it is restarted (see below). |
+| Other 4xx | No: it is an answer. |
+| 5xx | Yes, up to 2 retries, waiting as long as `Retry-After` asks or a growing backoff. |
+| Network error or timeout | Yes, up to 2 retries, with a growing backoff. |
+
+Every attempt, first or retry, waits its turn in the same pacer, so a retry is never sent within 1.1 seconds of the end of the request before it. No retry starts more than 120 seconds after the call began, time spent waiting in the pacer's queue included, so a timed-out request is retried at most once.
+
+**After a 403 or 429, or the bot-check page, the server stops until someone restarts it.** Checkbook NYC answers 403 or 429 when it has blocked or rate-limited your network. Sometimes it answers with its bot-check page instead, with a status of 200 or a redirect. That is the same block in another form, so it stops the server the same way. The server counts a reply as the bot-check page only when it already recognized it as one: a page with the Incapsula markers (on either path), or, from `/api`, a web page where the API's XML was expected. A plain redirect without those markers is an error, but does not stop the server. The bot-check rule was decided on 2026-11-18 and waits for the owner to confirm it (`BOT_CHECK_LOCKS` in `src/checkbook.ts`). From that moment the server process sends nothing more to Checkbook NYC: not the call that got the reply, not the calls already waiting their turn, and not any later call, from any tool. There is no timer and it never unlocks by itself. Each of those calls answers with an error that says when the block happened, that asking again will not help and could make the block last longer, and to report it to whoever runs the server, with the incident ID if Checkbook gave one. `about_data`, `about_betanyc` and `whats_changed` keep working, because they never use the network. To start again, a person checks first (has the block cleared? did something send too many requests?), then restarts the server. Decided in #51.
 
 This server also declines to follow HTTP redirects. A redirect chain is followed inside a single `fetch()` call, where rate pacing cannot reach it, so one logical API call can arrive at the origin as dozens of requests.
 
@@ -410,9 +432,10 @@ This server also declines to follow HTTP redirects. A redirect chain is followed
 
 - **Endpoint:** `POST https://www.checkbooknyc.com/api`
 - **Format:** XML (handled internally — tools accept and return JSON)
-- **Authentication:** none. Requests identify themselves only by User-Agent.
+- **Authentication:** none. Requests identify themselves only by User-Agent: `betanyc-checkbook-mcp/<version> (github.com/BetaNYC/nyc-checkbook-mcp)`, never a browser's.
 - **Coverage:** Citywide agencies + NYCEDC and NYCHA as other government entities (OGE)
 - **Fiscal year:** NYC fiscal year runs July 1 – June 30 (FY2025 = July 2024 – June 2025)
+- **Known gap: one list of records per reply.** The server reads only the first list of records under `result_records`. Every reply seen so far has one. Whether a real reply can have more cannot be checked without live calls; if one did, the records in the other lists would be left out.
 - **`smart_search` is disabled by default:** the `/smart_search` web path is not a supported API endpoint (WAF-fronted, JS-rendered), so the server does not call it unless `CHECKBOOK_ENABLE_SMART_SEARCH=1` is set. Use the structured XML-API tools; see the note under *Tools reference*.
 
 ---
@@ -459,17 +482,28 @@ npm run build
 | `npm run dev` | Compile in watch mode |
 | `npm test` | Build, then run the test suite |
 | `npm run check:columns` | Build, then check every default response-column list, per call shape, against `probe-results.txt` (no network; see [scripts/README.md](scripts/README.md)) |
+| `npm run eval` | Build, then ask the evaluation set's questions offline and write `eval/runs/YYYY-MM-DD.json` (see below) |
 | `npm start` | Run the built server |
 
 ### Testing
 
-Tests use the Node built-in test runner and live in `test/`. They run against recorded fixtures in `test/fixtures/` rather than the live API, so the suite needs no network access and cannot trip the rate limit.
+Tests use the Node built-in test runner and live in `test/`. They run against recorded fixtures in `test/fixtures/` rather than the live API, so the suite needs no network access and cannot trip the rate limit. `npm test` loads `test/helpers/no-network.mjs` into every test file: the real `fetch` throws, so a test must install a fake one, and a test that reaches the real one fails even if the code under test swallows the error. Run the suite with `npm test`, not bare `node --test`, so the guard is on.
 
 Three areas carry tests worth knowing about before you change them:
 
-- **`test/pace.test.mjs`** guards the rate limiter, including the case where several callers are in flight at once. If you change how requests are dispatched, these are the tests that catch a regression into bursting.
+- **`test/pace.test.mjs`** and **`test/upstream-lock.test.mjs`** guard the rate limiter and the lock after a 403 or 429, including several tool calls in flight at once. They run on a virtual clock with no timing slack. If you change how requests are dispatched, these are the tests that catch a regression into bursting.
 - **`test/strict-schema.test.mjs`** asserts that unknown tool parameters are rejected rather than silently dropped.
 - **`test/check-default-columns.test.mjs`** tests the default-column checker against a recorded probe snapshot. It proves the checker works, not that the columns are valid today. Only a fresh probe run can show that (see Releases).
+
+Live tests, if any are ever added, go in `test/live/`. `npm test` and CI run `test/*.test.mjs` only, so they never run by default.
+
+### Evaluation set
+
+`eval/questions.json` holds 14 questions people ask of Checkbook data (Parks' budget lines, a vendor's contracts by name, NYPD's spending, subcontractors on DOT contracts, …), each with a known right answer, written before scoring. Each runs offline against a recorded reply: the answer is what the server must send and say, for example that a vendor-name search is refused with guidance and sends no request, or that a database timeout is not "no records". `npm run eval` scores them and saves the result in `eval/runs/`; `test/eval.test.mjs` runs the same questions in `npm test`. A failing question is a bug or a wrong expectation, never a skip: `eval/runs/2026-11-18-first-run.txt` records the one expectation corrected after the first run.
+
+### Server instructions
+
+Text several tools share (agency code examples, the fiscal year, vendor names, contract field names) is in the server instructions once (`CHECKBOOK_GUIDE` in `src/betanyc.ts`), not in each tool description. `test/instructions.test.mjs` fails if it is repeated in a tool, and `test/tool-size.test.mjs` caps the size of the tool list plus the instructions. `test/stdout.test.mjs` checks that the server writes nothing but protocol to stdout.
 
 ### Source layout
 

@@ -1,0 +1,8 @@
+First scoring run, 2026-11-18, before any expectation was changed. 13 of 14 passed.
+
+FAIL  Q01  records.0.adopted is undefined, expected "44733327"
+
+Cause: a wrong expectation, not a server bug. The real reply (test/fixtures/budget-response.xml)
+nests the amount under <budget_amounts>, and the server passes records on as the API sends
+them. Q01's path was corrected to records.0.budget_amounts.adopted (noted in questions.json);
+the value was not changed.

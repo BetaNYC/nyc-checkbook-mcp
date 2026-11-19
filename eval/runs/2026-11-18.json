@@ -1,0 +1,92 @@
+{
+  "date": "2026-11-18",
+  "node": "v26.13.1",
+  "passed": 14,
+  "total": 14,
+  "results": [
+    {
+      "id": "Q01",
+      "q": "How many budget lines does the Parks Department have in FY2026, and what is the first one's adopted amount?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q02",
+      "q": "What contracts does Acme Consulting hold with the city?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q03",
+      "q": "What contracts did the city sign with vendor 'Acme' (using the parameter name a model guesses)?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q04",
+      "q": "Which registered revenue contracts were active in FY2025?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q05",
+      "q": "List registered revenue contracts (any year).",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q06",
+      "q": "Show me revenue contract RCT186620208202671.",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q07",
+      "q": "What did the NYPD spend in FY2025?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q08",
+      "q": "How much did the city pay in overtime to Parks staff in calendar year 2025?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q09",
+      "q": "What are the payroll records for Parks with no year given?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q10",
+      "q": "Which NYCHA contracts were in FY2024, with the year on each?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q11",
+      "q": "Which NYCHA contracts does vendor ACME hold, any year?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q12",
+      "q": "Which NYCEDC contracts are there, all years, with their APT PIN?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q13",
+      "q": "Who are the subcontractors on DOT's FY2025 registered contracts?",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "Q14",
+      "q": "How much did the city pay ASSOCIATION OF COMMUNITY EMPLOYMENT PROGRAMS FOR THE HOMELESS in FY2026?",
+      "pass": true,
+      "failures": []
+    }
+  ]
+}

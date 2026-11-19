@@ -6,7 +6,11 @@
  * be a test defect, and several tests assert `calls.length === 0` to prove the
  * network was never touched.
  */
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
+import { freshUpstream } from "./helpers/upstream.mjs";
+
+// A 403 locks the process (#51); each test starts unlocked, on a virtual pacer clock.
+beforeEach(() => freshUpstream());
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

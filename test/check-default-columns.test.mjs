@@ -367,3 +367,23 @@ test("CLI: exit code 1 on findings, full report reaches a pipe, no network; 2 on
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /cannot read/);
 });
+
+test("CLI (#43c): a relative path resolves against INIT_CWD, where npm was run; the default stays at the package root", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const script = new URL("../scripts/check-default-columns.mjs", import.meta.url).pathname;
+  const fixtures = new URL("./fixtures/", import.meta.url).pathname;
+  const root = new URL("../", import.meta.url).pathname;
+  // As `npm run check:columns -- probe-results-sample.txt` from test/fixtures/: cwd is the
+  // package root, INIT_CWD is test/fixtures/.
+  const env = { ...process.env, INIT_CWD: fixtures };
+  const r = spawnSync(process.execPath, [script, "probe-results-sample.txt"], { cwd: root, env, encoding: "utf8" });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stdout, new RegExp(`^Probe output: ${fixtures}probe-results-sample\\.txt`));
+  // Without INIT_CWD the same relative path is read from cwd, and is not there.
+  const { INIT_CWD, ...noInit } = process.env;
+  const bare = spawnSync(process.execPath, [script, "probe-results-sample.txt"], { cwd: root, env: noInit, encoding: "utf8" });
+  assert.equal(bare.status, 2);
+  // No argument: the probe's own output file at the package root, even with INIT_CWD set.
+  const dflt = spawnSync(process.execPath, [script], { cwd: root, env, encoding: "utf8" });
+  assert.match(dflt.stderr + dflt.stdout, new RegExp(`${root}probe-results\\.txt`));
+});

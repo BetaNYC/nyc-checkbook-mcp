@@ -43,11 +43,29 @@ export const REPO_URL = "https://github.com/BetaNYC/nyc-checkbook-mcp";
 export const SMART_SEARCH_SOURCE = "smart-search";
 export const SMART_SEARCH_OFF_REASON = "smart search is off (CHECKBOOK_ENABLE_SMART_SEARCH is not set)";
 
+/** Text several tools share, said once here instead of in each description (#59). Each agency
+ * code is one Checkbook NYC itself returned for it (#37; test/agency-codes.test.mjs). */
+export const CHECKBOOK_GUIDE =
+  "Fiscal years: the NYC fiscal year runs July 1 to June 30 and is named for the year it ends " +
+  "(FY2025 is July 2024 to June 2025). " +
+  "Agency codes are 3 digits, for example '858' for OTI/DoITT, '056' for NYPD, '040' for Education, " +
+  "'841' for DOT, '846' for Parks, '057' for FDNY. To check a code, call search_budget with that " +
+  "agency_code and page_size 1 and read the agency field. " +
+  "Vendor names: the contracts API has no vendor-name filter, only vendor_code, and no name-to-code " +
+  "lookup. To find a vendor's contracts by name, call search_spending with payee_name, read the " +
+  "contract_id from those checks, then call get_contract or search_contracts with it. Many contracts " +
+  "are held by resellers, so a product or software name may not match the contract's own vendor. " +
+  "Contract field names follow the API's own domain and are not normalized: registered expense and " +
+  "all use prime_contract_* names (prime_contract_id, prime_contract_purpose, ...); registered " +
+  "revenue and every pending search use plain names (contract_id, purpose, agency, ...).";
+
 /** The server's MCP instructions: what it covers, then the shared module's own instructions
  * (call about_data, about_betanyc and whats_changed). */
 export const SERVER_INSTRUCTIONS =
   "NYC spending, contracts, budget, payroll and revenue from Checkbook NYC, the NYC Comptroller's " +
   "financial transparency site, by BetaNYC. " +
+  CHECKBOOK_GUIDE +
+  " " +
   BETANYC_INSTRUCTIONS;
 
 /** The shared tools for one server. Throws at startup if DATA-SOURCES.json does not describe
