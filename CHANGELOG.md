@@ -59,7 +59,7 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   `about_data`'s description lists this server's topics. When `smart_search` is off (the
   default), the factory gets `unavailableSources` for its source, so `about_data` says that
   source is not available on this server instead of "fetched when you ask".
-- The server registers 13 tools instead of 12. The README lists 12 instead of 11.
+- The server registers 13 tools instead of 12.
 - `package.json` `files` adds `DATA-SOURCES.json` and `data.json`.
 - CI: a new `about-data` job (the tool list from the built server, `about-data check
   --tools-file`, `about-data catalog --check`, and the JSON Schema and DCAT-US 3.0 validators
@@ -68,6 +68,7 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
 
 ### Fixed
 
+- The README said the server exposes 12 tools; `tools/list` has 13, because `smart_search` is listed even while it is off. It now says 13 and lists `smart_search`, off unless `CHECKBOOK_ENABLE_SMART_SEARCH` is `1` or `true`.
 - Agency codes (#37). The `agency_code` examples said `'040'` for NYPD (040 is the
   Department of Education; NYPD is 056) and `'002'` for the Department of Finance (002 is
   the Mayoralty). The README's agency table had 9 of 14 codes wrong. Both now list only

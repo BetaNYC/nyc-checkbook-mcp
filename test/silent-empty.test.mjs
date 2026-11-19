@@ -12,6 +12,18 @@ import { readFileSync, mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+
+// The probe tests put a fake curl first on PATH. If the real curl ever ran instead, these send
+// it to a closed port on this machine: curl then neither looks up checkbooknyc.com nor connects.
+const NO_REAL_CURL = {
+  ALL_PROXY: "http://127.0.0.1:9",
+  HTTPS_PROXY: "http://127.0.0.1:9",
+  https_proxy: "http://127.0.0.1:9",
+  HTTP_PROXY: "http://127.0.0.1:9",
+  http_proxy: "http://127.0.0.1:9",
+  NO_PROXY: "",
+  no_proxy: "",
+};
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -137,7 +149,7 @@ test("probe-api-spec.sh records a curl transport failure as ABORTED and exits 1 
   const out = join(dir, "probe-results.txt");
   const script = new URL("../scripts/probe-api-spec.sh", import.meta.url).pathname;
   const r = spawnSync("bash", [script, out], {
-    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, CHECKBOOK_PROBE_PACE: "0" },
+    env: { ...process.env, ...NO_REAL_CURL, PATH: `${dir}:${process.env.PATH}`, CHECKBOOK_PROBE_PACE: "0" },
     encoding: "utf8",
   });
   assert.equal(r.status, 1, r.stderr);
@@ -210,7 +222,7 @@ test("probe-api-spec.sh keeps every <description> of a reply, one per line (#43d
   const out = join(dir, "probe-results.txt");
   const script = new URL("../scripts/probe-api-spec.sh", import.meta.url).pathname;
   const r = spawnSync("bash", [script, out], {
-    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, CHECKBOOK_PROBE_PACE: "0" },
+    env: { ...process.env, ...NO_REAL_CURL, PATH: `${dir}:${process.env.PATH}`, CHECKBOOK_PROBE_PACE: "0" },
     encoding: "utf8",
   });
   assert.equal(r.status, 0, r.stderr);
