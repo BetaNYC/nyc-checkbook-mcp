@@ -20,3 +20,28 @@ test("the newest CHANGELOG release names the shared module version the code has"
   assert.ok(named.length >= 1, "the intro names the shared module");
   for (const v of named) assert.equal(v, SHARED_MODULE_VERSION, `the intro says shared module ${v}`);
 });
+
+test("the README states the real number of tools, and names every one", async () => {
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { registerTools } = await import("../dist/tools.js");
+  const server = new McpServer({ name: "nyc-checkbook-mcp", version: "0" });
+  registerTools(server);
+  const client = new Client({ name: "docs-test", version: "0" });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(st), client.connect(ct)]);
+  let names;
+  try {
+    names = (await client.listTools()).tools.map((t) => t.name);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+  const readme = read("README.md");
+  const stated = /Exposes (\d+) tools over MCP/.exec(readme);
+  assert.ok(stated, 'the README says "Exposes N tools over MCP"');
+  assert.equal(Number(stated[1]), names.length, `the README says ${stated[1]} tools; tools/list has ${names.length}: ${names.join(", ")}`);
+  const table = readme.split(/Exposes \d+ tools over MCP/)[1].split("\n---")[0];
+  for (const name of names) assert.ok(table.includes(`| \`${name}\` |`), `the README's tool table does not list ${name}`);
+});

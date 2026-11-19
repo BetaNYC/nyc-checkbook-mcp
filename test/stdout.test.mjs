@@ -8,10 +8,14 @@ import { spawn } from "node:child_process";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 
 test("#58 stdout is nothing but JSON-RPC messages", async () => {
-  const child = spawn(process.execPath, [new URL("../dist/index.js", import.meta.url).pathname], {
+  // The child gets its own fetch guard: the suite's --import is not passed on to it.
+  const guard = new URL("./helpers/no-network-child.mjs", import.meta.url).pathname;
+  const child = spawn(process.execPath, ["--import", guard, new URL("../dist/index.js", import.meta.url).pathname], {
     stdio: ["pipe", "pipe", "pipe"],
   });
   let out = "";
+  let err = "";
+  child.stderr.on("data", (d) => (err += d));
   const done = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`no tools/list answer; stdout so far: ${out.slice(0, 500)}`)), 15_000);
     child.stdout.on("data", (d) => {
@@ -32,6 +36,7 @@ test("#58 stdout is nothing but JSON-RPC messages", async () => {
   } finally {
     child.kill();
   }
+  assert.doesNotMatch(err, /NETWORK BLOCKED/, "the server reached for the network");
   const lines = out.split("\n").filter((l) => l !== "");
   assert.ok(lines.length >= 2);
   for (const line of lines) {

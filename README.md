@@ -52,7 +52,7 @@ Note that the API is rate-limited to **one request per second**. This server enf
 
 ## What it does
 
-Exposes 12 tools over MCP:
+Exposes 13 tools over MCP. One of them, `smart_search`, is off unless the server is started with the environment variable `CHECKBOOK_ENABLE_SMART_SEARCH` set to `1` or `true`. While it is off, it sends nothing and answers that it is disabled, pointing to the structured tools.
 
 | Tool | Description |
 |---|---|
@@ -65,6 +65,7 @@ Exposes 12 tools over MCP:
 | `get_agency_spending` | All spending for a specific agency in a fiscal year |
 | `search_nycedc_contracts` | NYCEDC / Other Government Entities (OGE) contracts — separate from citywide |
 | `search_nycha_contracts` | NYCHA (Housing Authority) contracts at release/line-item granularity |
+| `smart_search` | Off by default (see above and the note under *Tools reference*). When switched on, it reads the checkbooknyc.com search page, which usually answers that it is unavailable |
 | `whats_changed` | What changed in this server, newest first, from [WHATS-CHANGED.md](WHATS-CHANGED.md) (filter by date or tag) |
 | `about_betanyc` | Who built this server, where to report a bug in this server or ask for a new feature, and BetaNYC's links |
 | `about_data` | Where each kind of data comes from, from [DATA-SOURCES.json](DATA-SOURCES.json): the publisher, whether it is an official record, how current it is, terms and credit line, where to check a figure and where to report an error (filter by topic or tool name) |
@@ -79,7 +80,7 @@ Every tool only reads data, and says so to your AI app: each declares MCP tool a
 
 ## Tools reference
 
-> **`smart_search` is disabled by default and is intentionally not documented as a usable tool here.** The checkbooknyc.com `/smart_search` path is **not a supported Checkbook NYC API endpoint** — it is a WAF-fronted (Incapsula), JavaScript-rendered web page, confirmed with the NYC Comptroller's office. This server does not call it by default; the tool stays registered but returns opt-in guidance unless `CHECKBOOK_ENABLE_SMART_SEARCH=1` is set (and even then it is almost always WAF-blocked server-side). For vendor-name lookups use `search_spending(payee_name="…")`.
+> **`smart_search` is disabled by default, so it has no parameter table here.** The checkbooknyc.com `/smart_search` path is **not a supported Checkbook NYC API endpoint** — it is a WAF-fronted (Incapsula), JavaScript-rendered web page, confirmed with the NYC Comptroller's office. This server does not call it by default; the tool stays registered but returns opt-in guidance unless `CHECKBOOK_ENABLE_SMART_SEARCH` is `1` or `true` (and even then it is almost always WAF-blocked server-side). For vendor-name lookups use `search_spending(payee_name="…")`.
 
 ### `search_contracts`
 

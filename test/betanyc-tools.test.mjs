@@ -223,7 +223,11 @@ test("over stdio, the built server answers the shared tools with structuredConte
 });
 
 test("WHATS-CHANGED.md, DATA-SOURCES.json and data.json ship in the npm package", () => {
-  const out = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { encoding: "utf8" });
+  // --offline and no update check: npm must not reach the registry from a test.
+  const out = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts", "--offline", "--no-update-notifier"], {
+    encoding: "utf8",
+    env: { ...process.env, npm_config_update_notifier: "false", npm_config_offline: "true" },
+  });
   const files = JSON.parse(out)[0].files.map((f) => f.path);
   for (const f of ["WHATS-CHANGED.md", "DATA-SOURCES.json", "data.json"]) assert.ok(files.includes(f), `${f}: ${files.join(", ")}`);
   assert.ok(files.includes("dist/betanyc-tools.js"));
