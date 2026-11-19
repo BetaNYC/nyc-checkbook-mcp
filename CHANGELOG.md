@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.8.0] - unreleased
+## [1.8.0] - 2026-11-19
 
 Adds `about_data`, the third tool BetaNYC adds to each of its MCP servers, and
 `DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.5.2.
