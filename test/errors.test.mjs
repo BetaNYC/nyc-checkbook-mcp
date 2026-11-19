@@ -87,3 +87,67 @@ test("#57 an unexpected error says where to report it and carries no stack", () 
   assert.match(text, /^Error: The tool failed: Cannot read properties of undefined\. Try again; if it keeps failing, report it at https:\/\/github\.com\/BetaNYC\/nyc-checkbook-mcp\/issues$/);
   assert.doesNotMatch(text, STACK);
 });
+
+// ─── Review of #65: raw errors never reach the user ─────────────────────────
+
+/** An error whose message has several lines, a stack frame and a file path. */
+function messyError() {
+  const err = new Error(
+    "socket hang up\n    at TLSSocket.onClose (/Users/someone/project/node_modules/undici/lib/core.js:812:41)\n" +
+      "Secret detail on line three /Users/someone/project/src/checkbook.ts"
+  );
+  return err;
+}
+const PATHLIKE = /\/Users\/|node_modules|\.ts\b|core\.js|:\d+:\d+/;
+
+test("review of #65: an unexpected error gives only its first plain line, no stack line or file path", () => {
+  const text = failure(messyError()).content[0].text;
+  assert.match(text, /^Error: The tool failed: socket hang up\. Try again; if it keeps failing, report it at /);
+  assert.doesNotMatch(text, PATHLIKE);
+  assert.doesNotMatch(text, /line three/);
+  assert.doesNotMatch(text, STACK);
+});
+
+test("review of #65: a reply body cut off mid-read is a network error, said plainly, not 'The tool failed'", async () => {
+  const { client, close } = await connect();
+  const original = globalThis.fetch;
+  try {
+    freshUpstream();
+    globalThis.fetch = async () =>
+      new Response(
+        new ReadableStream({
+          start(c) {
+            c.enqueue(new TextEncoder().encode("<response><status>"));
+            c.error(messyError()); // the connection breaks while the body arrives
+          },
+        }),
+        { status: 200 }
+      );
+    const res = await client.callTool({ name: "search_budget", arguments: { fiscal_year: "2026", page_size: 1 } });
+    const text = assertPlainFailure(res, "body cut off");
+    assert.match(text, /^Error: Request to Checkbook NYC failed: socket hang up\. Try again in a minute\. If it keeps failing, Checkbook NYC may be down\.$/);
+    assert.doesNotMatch(text, /The tool failed/);
+    assert.doesNotMatch(text, PATHLIKE);
+  } finally {
+    globalThis.fetch = original;
+    await close();
+  }
+});
+
+test("review of #65: a network error with a messy message gives only its first plain line", async () => {
+  const { client, close } = await connect();
+  const original = globalThis.fetch;
+  try {
+    freshUpstream();
+    globalThis.fetch = async () => {
+      throw messyError();
+    };
+    const res = await client.callTool({ name: "search_budget", arguments: { fiscal_year: "2026", page_size: 1 } });
+    const text = assertPlainFailure(res, "network error");
+    assert.match(text, /Request to Checkbook NYC failed: socket hang up\./);
+    assert.doesNotMatch(text, PATHLIKE);
+  } finally {
+    globalThis.fetch = original;
+    await close();
+  }
+});

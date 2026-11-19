@@ -296,3 +296,30 @@ test("#51 no retry starts more than 120 s after the call began, time waiting in 
   assert.equal(retried, 1, "the retry waited in the queue past 120 s, so it was not sent");
   assert.equal(res.status, 503, "the last reply is returned as it was");
 });
+
+test("review of #65: the wait for the FIRST turn counts too: past 120 s, a 503 is not retried", async () => {
+  const policy = { maxAttempts: 3, baseDelayMs: 500, maxDelayMs: 8_000, deadlineMs: 120_000, timeoutMs: 60_000 };
+  // Another call holds the queue for 130 s.
+  const slowOther = fetchWithRetry("http://x/other", {}, policy, {
+    sleepImpl: (ms) => clock.sleep(ms),
+    makeSignal: () => undefined,
+    fetchImpl: async () => {
+      await clock.sleep(130_000);
+      return new Response(OK_XML, { status: 200 });
+    },
+  });
+  // This call starts now, waits about 131 s for its first turn, then gets a 503.
+  let sent = 0;
+  const call = fetchWithRetry("http://x/api", {}, policy, {
+    sleepImpl: (ms) => clock.sleep(ms),
+    randomImpl: () => 0,
+    makeSignal: () => undefined,
+    fetchImpl: async () => {
+      sent++;
+      return new Response("busy", { status: 503 });
+    },
+  });
+  const [, res] = await Promise.all([slowOther, call]);
+  assert.equal(sent, 1, "the call began more than 120 s ago, so the 503 is not retried");
+  assert.equal(res.status, 503);
+});

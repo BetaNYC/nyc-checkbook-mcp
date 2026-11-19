@@ -80,7 +80,7 @@
         "requests": 1,
         "sent_includes": ["<type_of_data>Spending</type_of_data>", "<value>056</value>", "<name>fiscal_year</name><type>value</type><value>2025</value>", "<max_records>50</max_records>"],
         "field": [["agency_code", "056"], ["total_records", 3160063], ["has_more", true], ["source.publisher", "Office of the New York City Comptroller"], ["source.as_of_kind", "retrieved"]],
-        "text": ["For the next 50, call again with page=2", "Source: .*Office of the New York City Comptroller.*Link: https://www\\.checkbooknyc\\.com/data-feeds/api"]
+        "text": ["For the next 50, call again with page=2", "BetaNYC modified this data: .*Official record: .*Office of the New York City Comptroller.*, https://www\\.checkbooknyc\\.com/data-feeds/api"]
       },
       "note": "056 is NYPD; 040 is Education (#37). The count is the FY2025 Spending total recorded in #32."
     },

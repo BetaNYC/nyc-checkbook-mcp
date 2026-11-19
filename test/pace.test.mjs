@@ -5,7 +5,7 @@
  * (observed 2026-07-28). These tests guard the pacer that prevents it.
  *
  * The rule: one request at a time, process-wide, and each starts at least 1.1 s after the
- * previous one FINISHED (headers received, or the attempt failed), and after it started.
+ * previous one FINISHED (the reply arrived, or the attempt failed), and after it started.
  * Most tests run on a virtual clock (test/helpers/upstream.mjs), so the checks are exact:
  * no timer slack, and a pacer set to 1,050 ms fails them.
  */

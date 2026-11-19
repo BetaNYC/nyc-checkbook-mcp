@@ -44,7 +44,7 @@
           "reshaped",
           "fields-removed"
         ],
-        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names, keeping every value as text so codes keep their leading zeros. It trims spaces from the start and end of each value; nothing else in a value is changed. Records are not left out or reordered. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       },
       "verify_at": "https://www.checkbooknyc.com/",
       "freshness": {
@@ -101,7 +101,7 @@
           "reshaped",
           "fields-removed"
         ],
-        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names, keeping every value as text so codes keep their leading zeros. It trims spaces from the start and end of each value; nothing else in a value is changed. Records are not left out or reordered. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       },
       "verify_at": "https://www.checkbooknyc.com/",
       "freshness": {
@@ -162,7 +162,7 @@
           "reshaped",
           "fields-removed"
         ],
-        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names, keeping every value as text so codes keep their leading zeros. It trims spaces from the start and end of each value; nothing else in a value is changed. Records are not left out or reordered. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       },
       "verify_at": "https://www.checkbooknyc.com/",
       "freshness": {
@@ -218,7 +218,7 @@
           "reshaped",
           "fields-removed"
         ],
-        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names, keeping every value as text so codes keep their leading zeros. It trims spaces from the start and end of each value; nothing else in a value is changed. Records are not left out or reordered. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       },
       "verify_at": "https://www.checkbooknyc.com/",
       "freshness": {
@@ -276,7 +276,7 @@
           "reshaped",
           "fields-removed"
         ],
-        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names, keeping every value as text so codes keep their leading zeros. It trims spaces from the start and end of each value; nothing else in a value is changed. Records are not left out or reordered. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       },
       "verify_at": "https://www.checkbooknyc.com/",
       "freshness": {
@@ -332,7 +332,7 @@
           "reshaped",
           "fields-removed"
         ],
-        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names, keeping every value as text so codes keep their leading zeros. It trims spaces from the start and end of each value; nothing else in a value is changed. Records are not left out or reordered. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       },
       "verify_at": "https://www.checkbooknyc.com/",
       "freshness": {
@@ -390,7 +390,7 @@
           "reshaped",
           "fields-removed"
         ],
-        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names and every value unchanged, kept as text so codes keep their leading zeros. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
+        "detail": "The API answers in XML. The server turns each record into JSON with the API's own field names, keeping every value as text so codes keep their leading zeros. It trims spaces from the start and end of each value; nothing else in a value is changed. Records are not left out or reordered. Each tool asks the API for a set list of fields, so fields the API offers but the tool does not ask for are left out."
       },
       "verify_at": "https://www.checkbooknyc.com/",
       "freshness": {
@@ -445,9 +445,10 @@
       "changes": {
         "changed": true,
         "steps": [
+          "filtered",
           "reshaped"
         ],
-        "detail": "When the page does return results, the server picks each result's fields out of the page text, with their values unchanged."
+        "detail": "When the page does return results, the server picks each result's fields out of the page text. A result with no field it can read is left out. Only the first line of each value is kept. When one result names the same field twice, the later value replaces the earlier one. When the page does not show its total, total_results is the number of results the server read, not the site's own count."
       },
       "verify_at": "https://www.checkbooknyc.com/",
       "freshness": {

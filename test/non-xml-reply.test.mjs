@@ -3,14 +3,19 @@
 // evidence (status, Content-Type, length, the first 300 characters), and says this
 // is not "no records". No network: fetch is stubbed. Each kind's sample is a reply
 // actually seen (provenance in src/checkbook.ts, classifyReply).
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { callCheckbookApi, classifyReply, CheckbookApiError, REPLY_EXCERPT_MAX } from "../dist/checkbook.js";
+import { callCheckbookApi, classifyReply, CheckbookApiError, REPLY_EXCERPT_MAX, upstreamLocked } from "../dist/checkbook.js";
 import { registerTools } from "../dist/tools.js";
+import { freshUpstream } from "./helpers/upstream.mjs";
+
+// The bot-check page locks the process (#51, see test/bot-check-lock.test.mjs): start each
+// test, and each case, unlocked.
+beforeEach(() => freshUpstream());
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 
@@ -46,6 +51,21 @@ test("#39 classifyReply names each kind from its observed marker", () => {
 
 test("#39 a non-XML reply is an error with its kind, evidence and 'not no records', and is not retried", async () => {
   for (const c of CASES) {
+    freshUpstream();
+    if (c.kind === "access_challenge") {
+      // #51: the bot-check page is a block. The refusal, not the #39 evidence, and a lock.
+      const calls = await withReply(c.body, c.type, () =>
+        assert.rejects(callCheckbookApi({ type_of_data: "Spending" }), (err) => {
+          assert.equal(err.kind, "refused", c.kind);
+          assert.match(err.message, /bot-check page instead of data \(HTTP 200\)\. That is a block/);
+          assert.match(err.message, /This is not "no records"/);
+          return true;
+        })
+      );
+      assert.equal(calls, 1, `${c.kind}: one request, no retry`);
+      assert.ok(upstreamLocked(), `${c.kind}: locked`);
+      continue;
+    }
     const calls = await withReply(c.body, c.type, async () => {
       await assert.rejects(callCheckbookApi({ type_of_data: "Spending" }), (err) => {
         assert.ok(err instanceof CheckbookApiError, c.kind);

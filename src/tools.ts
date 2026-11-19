@@ -24,7 +24,7 @@ import {
   type DataDomain,
 } from "./checkbook.js";
 import { registerBetanycTools } from "./betanyc.js";
-import { parseDataSources, provenance, readOnlyAnnotations, toolError } from "./betanyc-tools.js";
+import { errorSummary, officialKind, parseDataSources, provenance, readOnlyAnnotations, toolError } from "./betanyc-tools.js";
 import { readFileSync } from "node:fs";
 
 // ─── Disclaimer ──────────────────────────────────────────────────────────────
@@ -43,15 +43,42 @@ const DATA_SOURCES = parseDataSources(
   readFileSync(new URL("../DATA-SOURCES.json", import.meta.url), "utf8")
 ).doc;
 
+/** What this server does to the data, in one line, for the Source line of each answer. It
+ * must agree with the source's `changes` in DATA-SOURCES.json, which about_data gives
+ * (test/answers.test.mjs checks the kind; the details are said in full there). */
+const API_CHANGES =
+  "converted from XML to JSON; asks for fewer fields than the API offers; spaces trimmed from the ends of values; rows not dropped or reordered";
+const SMART_SEARCH_CHANGES =
+  "fields picked out of the web page's text; results with no readable fields left out; only the first line of a value kept; a field name seen twice keeps its last value; total_results is this server's own count when the page shows no total";
+const CHANGES_BY_SOURCE: Record<string, string> = {
+  spending: API_CHANGES,
+  contracts: API_CHANGES,
+  budget: API_CHANGES,
+  payroll: API_CHANGES,
+  revenue: API_CHANGES,
+  "nycedc-contracts": API_CHANGES,
+  "nycha-contracts": API_CHANGES,
+  "smart-search": SMART_SEARCH_CHANGES,
+};
+
 /** The provenance block for one answer from `tool`. Throws if DATA-SOURCES.json has no
- * source for it (assertEveryToolExplained in the tests keeps that from shipping). */
+ * source for it (assertEveryToolExplained in the tests keeps that from shipping). A source that
+ * about_data says BetaNYC modified gets the same answer here: "BetaNYC modified this data: …
+ * Official record: …" (module 1.5.2's changedByBetanyc), never a bare "Source: …". */
 export function answerProvenance(tool: string, now: Date = new Date()) {
   const s = DATA_SOURCES?.sources.find((x) => x.valid && x.tools.includes(tool));
   if (!s?.source_name || !s.publisher?.name || !s.source_url) {
     throw new Error(`DATA-SOURCES.json has no usable source for ${tool}`);
   }
+  const kind = officialKind(s.official === true, s.changes?.changed === true, s.changes?.steps ?? []);
+  let changedByBetanyc: { kind: Exclude<typeof kind, "published-as-is">; detail: string } | undefined;
+  if (kind !== "published-as-is") {
+    const detail = CHANGES_BY_SOURCE[s.id ?? ""];
+    if (!detail) throw new Error(`No one-line description of BetaNYC's changes for source ${s.id}`);
+    changedByBetanyc = { kind, detail };
+  }
   return provenance(
-    { sourceName: s.source_name, publisher: s.publisher.name, sourceUrl: s.source_url, kind: "live" },
+    { sourceName: s.source_name, publisher: s.publisher.name, sourceUrl: s.source_url, kind: "live", changedByBetanyc },
     now
   );
 }
@@ -109,7 +136,9 @@ function whatToTry(err: CheckbookApiError): string {
 }
 
 /** Every failure, as an isError result: what went wrong, what to try, and the API's own
- * words cut to 500 characters (toolError from the shared module, #57). No stack traces. */
+ * words cut to 500 characters (toolError from the shared module, #57). No stack traces, no
+ * file paths: an error this server did not write itself gives only its first plain line
+ * (errorSummary). */
 export function failure(err: unknown): CallToolResult {
   if (err instanceof CheckbookApiError) {
     const msg = [err.message, whatToTry(err)].filter(Boolean).join(" ");
@@ -117,11 +146,10 @@ export function failure(err: unknown): CallToolResult {
   }
   // Our own guidance (a refused input) is already a sentence that says what to do. Anything
   // else is a bug in this server.
-  const message = err instanceof Error ? err.message : String(err);
   return toolError(
     err instanceof GuidanceError
-      ? message
-      : `The tool failed: ${message}. Try again; if it keeps failing, report it at ${ISSUES_URL}`
+      ? err.message
+      : `The tool failed: ${errorSummary(err).replace(/\.$/, "")}. Try again; if it keeps failing, report it at ${ISSUES_URL}`
   ) as CallToolResult;
 }
 
@@ -243,9 +271,9 @@ const fiscalYearSchema = z.string().optional().describe("Fiscal year, e.g. '2024
 const AGENCY_CODE = "3-digit agency code, e.g. '056' for NYPD, '040' for Education";
 /** Where to look up a contract by vendor name, said on the tools that take a vendor. */
 const VENDOR_NAME_TIP = "To find contracts by vendor name: search_spending payee_name, then its contract_id.";
-/** Record field names by contract shape. */
 /** Vendor names on contracts: a product is often sold through a reseller. */
 const RESELLER_TIP = "The vendor may be a reseller, not the product's maker.";
+/** Record field names by contract shape. */
 const CONTRACT_FIELDS =
   "Fields: registered expense/all use prime_contract_*; registered revenue and pending use plain names (contract_id, purpose).";
 const agencyCodeSchema = z.string().optional().describe(AGENCY_CODE);

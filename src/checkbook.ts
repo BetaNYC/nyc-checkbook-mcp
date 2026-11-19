@@ -8,6 +8,7 @@
  */
 
 import { XMLParser } from "fast-xml-parser";
+import { errorSummary } from "./betanyc-tools.js";
 import { VERSION } from "./version.js";
 
 const API_ENDPOINT = "https://www.checkbooknyc.com/api";
@@ -197,6 +198,7 @@ const USER_AGENT = `betanyc-checkbook-mcp/${VERSION} (github.com/BetaNYC/nyc-che
 //   2xx                         no, it is the answer
 //   3xx                         no, never followed, returned as an error (#23)
 //   403, 429                    NEVER, not even once, not even with Retry-After (#51)
+//   the bot-check page (2xx/3xx) NEVER, and it locks like a 403 or 429 (#51, BOT_CHECK_LOCKS)
 //   other 4xx                   no, it is an answer (#24)
 //   5xx                         yes, up to 2 retries, backoff or Retry-After
 //   network error / timeout     yes, up to 2 retries, backoff
@@ -209,6 +211,8 @@ const USER_AGENT = `betanyc-checkbook-mcp/${VERSION} (github.com/BetaNYC/nyc-che
 //
 // After any 403 or 429 the whole process locks (lockUpstream): no request of any kind is sent
 // again, queued ones included, until the process is restarted. No timer, no automatic unlock.
+// A 2xx or 3xx reply that this file recognizes as the bot-challenge page (isBotCheckPage) locks
+// it the same way (BOT_CHECK_LOCKS, decided 2026-11-18, to be confirmed by the owner).
 const REQUEST_TIMEOUT_MS = 60_000;
 
 // ─── Rate pacing ─────────────────────────────────────────────────────────────
@@ -242,7 +246,7 @@ let paceTail: Promise<void> = Promise.resolve();
 let lastStartedAt = -Infinity;
 let lastFinishedAt = -Infinity;
 
-/** Hand back the pacer's turn. Call it once the reply's headers arrive or the attempt fails. */
+/** Hand back the pacer's turn. Call it once the reply has arrived (and been checked for a block) or the attempt failed. */
 export type ReleaseTurn = () => void;
 
 /**
@@ -250,12 +254,13 @@ export type ReleaseTurn = () => void;
  * request goes through here, retries included, so no code path can burst:
  *
  * - one request at a time, process-wide (the next waits for the previous to be released);
- * - each starts at least MIN_REQUEST_INTERVAL_MS after the previous one FINISHED (headers
- *   received, or the attempt failed or timed out), and after it started. Measuring from the
- *   start alone let two requests reach the server less than a second apart when the first
- *   had to open a connection;
- * - once the process is locked (a 403 or 429), every waiting and later turn rejects with
- *   the locked error instead, and nothing is sent.
+ * - each starts at least MIN_REQUEST_INTERVAL_MS after the previous one FINISHED (the reply
+ *   arrived: its headers, or for a 2xx or 3xx the whole reply, read for the bot-check page;
+ *   or the attempt failed or timed out), and after it started. Measuring from the start alone
+ *   let two requests reach the server less than a second apart when the first had to open a
+ *   connection;
+ * - once the process is locked (a 403, a 429 or the bot-check page), every waiting and later
+ *   turn rejects with the locked error instead, and nothing is sent.
  *
  * The caller MUST call the returned function exactly once (fetchWithRetry does, in finally).
  *
@@ -299,6 +304,8 @@ interface UpstreamLock {
   status: number;
   at: Date;
   incidentId?: string;
+  /** The block was the bot-challenge page (a 2xx or 3xx), not a 403 or 429. */
+  botCheck: boolean;
 }
 
 let lock: UpstreamLock | undefined;
@@ -309,8 +316,8 @@ export function upstreamLocked(): boolean {
 }
 
 /** Lock the process. The first block is kept: its time, status and incident ID. */
-function lockUpstream(status: number, incident?: string): void {
-  if (!lock) lock = { status, at: new Date() };
+function lockUpstream(status: number, incident?: string, botCheck = false): void {
+  if (!lock) lock = { status, at: new Date(), botCheck };
   if (incident && !lock.incidentId) lock.incidentId = incident;
 }
 
@@ -318,9 +325,11 @@ function lockUpstream(status: number, incident?: string): void {
 export function lockedMessage(): string {
   const l = lock;
   if (!l) return "";
+  const what = l.botCheck
+    ? "answered requests from this network with its bot-check page"
+    : `${l.status === 429 ? "rate-limited" : "refused"} requests from this network`;
   return (
-    `Checkbook NYC ${l.status === 429 ? "rate-limited" : "refused"} requests from this network at ` +
-    `${l.at.toISOString()} (HTTP ${l.status}). This server has stopped sending requests to Checkbook NYC, ` +
+    `Checkbook NYC ${what} at ${l.at.toISOString()} (HTTP ${l.status}). This server has stopped sending requests to Checkbook NYC, ` +
     `and sent nothing for this call. Asking again will not help and could make the block last longer. ` +
     `Report it to whoever runs this server` +
     (l.incidentId ? `, with the Incapsula incident ID ${l.incidentId}` : "") +
@@ -381,6 +390,9 @@ export interface RetryDeps {
   /** Rate pacer. Injected as a no-op in unit tests so they need no real sleeps. Resolves to
    * the function that ends the turn (or to nothing, for a no-op). */
   paceImpl: () => Promise<ReleaseTurn | void>;
+  /** NOT a test seam: which upstream path this is. When set, a 2xx or 3xx reply's body is read
+   * (from a copy) before the turn ends, and the bot-challenge page locks the process (#51). */
+  botCheckOn: UpstreamPath;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -513,10 +525,17 @@ export async function fetchWithRetry(
         if (response && (response.status === 403 || response.status === 429)) {
           const id = incidentId(await response.clone().text().catch(() => ""));
           lockUpstream(response.status, id);
+        } else if (response && deps.botCheckOn && response.status >= 200 && response.status <= 399) {
+          // The bot-challenge page is the same block in another form (#51): the same lock, in
+          // the same step, before the turn ends.
+          const page = await response.clone().text().catch(() => "");
+          if (botCheckLocks(deps.botCheckOn, response.status, response.headers.get("content-type"), page)) {
+            lockUpstream(response.status, incidentId(page), true);
+          }
         }
       }
     } finally {
-      endTurn?.(); // the attempt has finished: headers received, or it failed
+      endTurn?.(); // the attempt has finished: the reply arrived and was checked, or it failed
     }
     if (pastDeadline) break;
     if (!response) {
@@ -622,6 +641,49 @@ export function classifyReply(contentType: string | null, body: string): ReplyKi
   return "unparseable";
 }
 
+// ─── The bot-challenge page locks the server (#51) ───────────────────────────
+
+/**
+ * #51, decided 2026-11-18, TO BE CONFIRMED BY THE OWNER. The publisher's rule is to stop on any
+ * 403 or 429. A 2xx or 3xx reply that this file already recognizes as the bot-challenge page is
+ * the same block in another form, so it locks the process exactly like a 403 or 429: the same
+ * lock, the same message, the incident ID when the page shows one.
+ * To undo this decision, set it to false: the page is then an error again (no lock), and the
+ * tests in test/bot-check-lock.test.mjs that expect a lock fail until they are changed too.
+ */
+const BOT_CHECK_LOCKS = true;
+
+/** The two upstream paths. Each recognizes the bot-challenge page its own way. */
+export type UpstreamPath = "api" | "smart_search";
+
+/** The Incapsula markers this file has always matched (classifyReply, classifySmartSearchResponse). */
+const INCAPSULA_MARKER_RE = /_Incapsula_Resource|Incapsula incident ID/i;
+
+/**
+ * True when a 2xx or 3xx reply is the bot-challenge page, by the detection this file already had,
+ * and no wider:
+ *   - either path, 2xx or 3xx: an Incapsula marker in the body;
+ *   - /api, 2xx: a reply that is not the API's XML and that classifyReply calls
+ *     access_challenge (the bot-check, or HTML where XML was expected, #39).
+ * A 3xx without a marker is a plain redirect, not recognized: an error, no lock. On smart search
+ * an HTML page without a marker is the site's page, not recognized either.
+ */
+export function isBotCheckPage(path: UpstreamPath, status: number, contentType: string | null, body: string): boolean {
+  if (status < 200 || status > 399) return false;
+  if (INCAPSULA_MARKER_RE.test(body)) return path === "smart_search" || status >= 300 || parseResponse(body).notApiXml === true;
+  return (
+    path === "api" &&
+    status < 300 &&
+    classifyReply(contentType, body) === "access_challenge" &&
+    parseResponse(body).notApiXml === true
+  );
+}
+
+/** isBotCheckPage, when the decision above is on. */
+function botCheckLocks(path: UpstreamPath, status: number, contentType: string | null, body: string): boolean {
+  return BOT_CHECK_LOCKS && isBotCheckPage(path, status, contentType, body);
+}
+
 /** The error for a reply that is not the API's XML: what it most likely was, and the evidence. */
 export function nonXmlReplyError(status: number, contentType: string | null, body: string): CheckbookApiError {
   const kind = classifyReply(contentType, body);
@@ -647,16 +709,24 @@ export function incidentId(body: string): string | undefined {
  * going over the Comptroller's limit blocks the whole network, and more requests can make
  * the block last longer. fetchWithRetry has already locked the process; later calls get
  * lockedMessage(). */
-export function refusedMessage(status: number, body = ""): string {
+export function refusedMessage(status: number, body = "", botCheck = false): string {
   const id = incidentId(body);
+  const what = botCheck
+    ? `answered with its bot-check page instead of data (HTTP ${status}). That is a block, the same as a refusal`
+    : `has ${status === 429 ? "rate-limited" : "refused"} requests from this network (HTTP ${status})`;
   return (
-    `Checkbook NYC has ${status === 429 ? "rate-limited" : "refused"} requests from this network ` +
-    `(HTTP ${status}). This is not "no records". Do not ask Checkbook NYC again now: it blocks a ` +
+    `Checkbook NYC ${what}. This is not "no records". Do not ask Checkbook NYC again now: it blocks a ` +
     `network that sends too many requests, and each new request can make the block last longer. ` +
     `This server has stopped sending requests to Checkbook NYC until it is restarted, after a ` +
     `person has checked. Stop using these tools, and report it to whoever runs this server or at ${REPORT_URL}` +
     (id ? ` with the Incapsula incident ID ${id}.` : ".")
   );
+}
+
+/** A request that failed on the network (no reply, a timeout, or a reply cut off): one plain
+ * line, never a stack or a file path (errorSummary). */
+function networkError(err: unknown): CheckbookApiError {
+  return new CheckbookApiError(`Request to Checkbook NYC failed: ${errorSummary(err)}.`, { kind: "network" });
 }
 
 /**
@@ -675,16 +745,17 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiSuccess> {
       method: "POST",
       headers: { "Content-Type": "application/xml", "User-Agent": USER_AGENT },
       body,
-    });
+    }, DEFAULT_RETRY_POLICY, { botCheckOn: "api" });
   } catch (err) {
     if (err instanceof CheckbookApiError) throw err; // locked (#51): nothing was sent
-    throw new CheckbookApiError(
-      `Request to Checkbook NYC failed: ${err instanceof Error ? err.message : String(err)}`,
-      { kind: "network" }
-    );
+    throw networkError(err);
   }
 
   if (isRedirectResponse(response)) {
+    const page = await response.text().catch(() => "");
+    if (botCheckLocks("api", response.status, response.headers.get("content-type"), page)) {
+      throw new CheckbookApiError(refusedMessage(response.status, page, true), { status: response.status, kind: "refused" });
+    }
     throw new CheckbookApiError(
       `Checkbook NYC returned an unexpected redirect (HTTP ${response.status || "opaque"}) which this client does not follow; the endpoint is likely behind a WAF/interstitial. This is an error, not an empty result set.`,
       { status: response.status, kind: "redirect" }
@@ -703,11 +774,24 @@ export async function callCheckbookApi(req: ApiRequest): Promise<ApiSuccess> {
     );
   }
 
-  const text = await response.text();
+  // A connection that breaks while the body arrives is a network error, said plainly, not a
+  // raw message (review of #65).
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (err) {
+    throw networkError(err);
+  }
   const parsed = parseResponse(text);
   // Not retried (#39): one request is how we learn what the reply was, and a second
   // spends the 1 req/sec budget on a reply we cannot use.
-  if (parsed.notApiXml) throw nonXmlReplyError(response.status, response.headers.get("content-type"), text);
+  if (parsed.notApiXml) {
+    const contentType = response.headers.get("content-type");
+    if (botCheckLocks("api", response.status, contentType, text)) {
+      throw new CheckbookApiError(refusedMessage(response.status, text, true), { status: response.status, kind: "refused" });
+    }
+    throw nonXmlReplyError(response.status, contentType, text);
+  }
   if (!parsed.success) {
     throw new CheckbookApiError("Checkbook NYC refused the request.", {
       kind: "api",
@@ -746,14 +830,33 @@ export interface SmartSearchOutcome {
 export function classifySmartSearchResponse(
   status: number,
   html: string
-): { usable: boolean; reason?: string } {
-  if (status === 403 || status === 429) return { usable: false, reason: refusedMessage(status, html) };
-  if (status >= 300) {
-    // A 3xx is never followed (#23) and never a result.
-    return { usable: false, reason: `HTTP ${status} (WAF challenge or error)` };
+): { usable: boolean; reason?: string; stop?: boolean } {
+  // stop: a block, or what looks like one. No "try the other tools": they call the same site.
+  if (status === 403 || status === 429) return { usable: false, reason: refusedMessage(status, html), stop: true };
+  if (botCheckLocks("smart_search", status, null, html)) {
+    return { usable: false, reason: refusedMessage(status, html, true), stop: true }; // locked (#51)
   }
-  if (/_Incapsula_Resource|Incapsula incident ID/i.test(html)) {
-    return { usable: false, reason: "Blocked by Incapsula WAF JavaScript challenge" };
+  if (status >= 300 && status <= 399) {
+    // A 3xx is never followed (#23) and never a result. Not recognized as the bot check: no lock.
+    return {
+      usable: false,
+      reason:
+        `Checkbook NYC answered with a redirect (HTTP ${status}), which this server never follows. On this ` +
+        `site a redirect is usually its bot check. Stop calling Checkbook NYC for now, and report it to ` +
+        `whoever runs this server or at ${REPORT_URL}`,
+      stop: true,
+    };
+  }
+  if (status >= 400) return { usable: false, reason: `HTTP ${status} (WAF challenge or error)` };
+  if (INCAPSULA_MARKER_RE.test(html)) {
+    // Only when BOT_CHECK_LOCKS is off: the bot check, but no lock.
+    return {
+      usable: false,
+      reason:
+        `Checkbook NYC answered with its bot-check page instead of results. Stop calling Checkbook NYC ` +
+        `for now, and report it to whoever runs this server or at ${REPORT_URL}`,
+      stop: true,
+    };
   }
   if (!/TRANSACTION #\d+:/.test(html)) {
     return {
@@ -789,7 +892,7 @@ export async function smartSearch(
   try {
     const response = await fetchWithRetry(url, {
       headers: { Accept: "text/html", "User-Agent": USER_AGENT },
-    });
+    }, DEFAULT_RETRY_POLICY, { botCheckOn: "smart_search" });
     status = response.status;
     html = await response.text();
   } catch (err) {
@@ -798,7 +901,7 @@ export async function smartSearch(
       available: false,
       total: 0,
       results: [],
-      reason: `Request failed: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `Request failed: ${errorSummary(err)}`,
       fallback: SMART_SEARCH_UNAVAILABLE_FALLBACK,
     };
   }
@@ -810,8 +913,9 @@ export async function smartSearch(
       total: 0,
       results: [],
       reason: check.reason,
-      // After a 403 or 429, no "try these other tools": they call the same site (#51).
-      fallback: status === 403 || status === 429 ? undefined : SMART_SEARCH_UNAVAILABLE_FALLBACK,
+      // After a 403, a 429, a redirect or the bot-check page, no "try these other tools": they
+      // call the same site (#51).
+      fallback: check.stop ? undefined : SMART_SEARCH_UNAVAILABLE_FALLBACK,
     };
   }
 

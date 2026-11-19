@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.8.0] - unreleased
 
 Adds `about_data`, the third tool BetaNYC adds to each of its MCP servers, and
-`DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.5.1.
+`DATA-SOURCES.json`, the file it answers from. Moves to BetaNYC's shared module 1.5.2.
 Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
 
 ### Added
@@ -40,15 +40,19 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
 
 ### Changed
 
-- `src/betanyc-tools.ts` is the workspace's shared module 1.5.1 (was 1.2.4) and
+- `src/betanyc-tools.ts` is the workspace's shared module 1.5.2 (was 1.2.4) and
   `scripts/whats_changed.py` is 1.4.1, both copied in unchanged, with the validator kit
   (`data-sources.schema.json` as shipped with 1.4.1). Never edit the copies. 1.4.0 gives
   each source one of three answers on whether it is official, naming the source, its
   publisher and a link; 1.5.0 adds helpers for a server's own tools (annotations,
   provenance, errors, tool-list size), and 1.5.1 tightens them: `assertEveryToolAnnotated`
   also requires `readOnlyHint` true and a title, a live answer's time is New York time to
-  the minute, and `toolError` passes the caller's own message on as written. The 1.5.1 copy
-  depends on BetaNYC/betanyc-ai-workspace#1702 merging.
+  the minute, and `toolError` passes the caller's own message on as written. 1.5.2 drops
+  stack-frame lines from the caller's message too and caps it at 1,000 characters, adds
+  `errorSummary` (the first plain line of an unknown error), and lets `provenance()` say that
+  BetaNYC changed the data (`changedByBetanyc`), in `about_data`'s own words. The 1.5.2 copy is
+  the workspace's file at `bbc1671` (SHA-256 `bcc117e7…2b33`, 125,208 bytes) and depends on
+  BetaNYC/betanyc-ai-workspace#1702 merging.
 - Every Checkbook tool declares MCP tool annotations: `readOnlyHint: true`,
   `openWorldHint: true` (each calls the live Checkbook NYC API) and a title (#50).
 - `src/betanyc.ts` registers the three shared tools from the module's factory output, so
@@ -84,7 +88,7 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   where to report it. `CheckbookApiError` carries the API's words in `upstream`.
 - Every data answer carries a `source` object (`source`, `publisher`, `source_url` and
   `as_of`, the field names `about_data` uses, plus `as_of_kind` and `retrieved_at`) and a
-  "Source: … Fetched from the source for this answer at … (New York time). Link: …" line,
+  line naming the source, the time it was fetched (New York time) and a link,
   built with the shared module's `provenance` from the tool's source in `DATA-SOURCES.json`
   (#52, #53). The as-of is the time of the request (`as_of_kind` "retrieved", the same
   instant as `retrieved_at`, in UTC); the Source line gives it in New York time to the
@@ -127,9 +131,35 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   the previous one finished (headers received, or the attempt failed or timed out) and after
   it started, on the monotonic clock (`performance.now`). Retries included.
 - The 120 s retry deadline now counts time spent waiting in the pacer's queue, as the README
-  says: a retry whose turn comes after 120 s is not sent.
+  says: a retry whose turn comes after 120 s is not sent. The wait for the first turn counts
+  too: a call that began more than 120 s ago does not retry a 5xx.
+- The bot-check page locks the server like a 403 or 429 (#51, decided 2026-11-18, to be
+  confirmed by the owner; `BOT_CHECK_LOCKS` in `src/checkbook.ts`). Checkbook NYC sometimes
+  answers a blocked network with its bot-check page and a 200 or a redirect instead of a 403.
+  Only replies the server already recognized as that page count: a page with the Incapsula
+  markers on either path, or from `/api` a web page where the API's XML was expected. The
+  call gets the refusal, with the incident ID when the page shows one; every later call gets
+  the locked error. A 2xx or 3xx reply is read in full before the pacer's turn ends, so a call
+  waiting in the queue is not sent. An ordinary 200 and a plain redirect do not lock.
+- `smart_search` no longer suggests the other tools after a redirect or the bot-check page:
+  they call the same site. It says to stop calling Checkbook NYC and to report it.
+- Errors never show a raw message. A reply cut off while it was being read is a network error
+  with the network wording (it was "The tool failed: …"); an error the server did not write
+  itself gives only its first plain line (`errorSummary`), never a stack line or file path.
+- Each answer's source line now agrees with `about_data`: BetaNYC modifies these sources, so
+  the line reads "BetaNYC modified this data: … This copy should not be considered the
+  official record. … Official record: …" (module 1.5.2's `changedByBetanyc`), and the
+  `source` object has `changed_by_betanyc`. A caller that parses the text should cut it at
+  the first blank line after the JSON; the line no longer starts "Source:".
+- `DATA-SOURCES.json` said the API sources keep "every value unchanged". The server trims
+  spaces from the ends of each value, and now says so. `smart_search` adds the `filtered`
+  step: it leaves out results with no readable fields, keeps only the first line of a value,
+  keeps the last value when a field name repeats, and counts the results itself when the page
+  shows no total. `data.json` is regenerated.
 - `npm run check:columns -- <relative path>` reads the path from where npm was run
   (`INIT_CWD`), not the package root (#43c).
+- The README's notes name a known gap: the server reads only the first list of records in a
+  reply. Every reply seen has one; whether a real one can have more cannot be checked offline.
 - `scripts/probe-api-spec.sh` keeps every `<description>` in a reply, one per line, instead
   of only the last (#43d).
 
@@ -139,7 +169,7 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   (`assertEveryToolExplained`, which also fails on an unknown tool); the eight topics; every
   API source is the Comptroller's, live, with `figures_official` false (modified by BetaNYC);
   a tool name as the topic; the smart search source is unavailable when off and live when on;
-  a bad topic and an unknown key; the server instructions; module 1.5.1.
+  a bad topic and an unknown key; the server instructions; module 1.5.2.
 - `test/betanyc-tools.test.mjs`: the three shared tools' input schemas, titles, descriptions
   and annotations equal the factory's, field by field; `about_data` over stdio answers with
   lab@beta.nyc and matches the module's `outputSchema`; `npm pack --dry-run` lists
@@ -157,7 +187,18 @@ Part of BetaNYC/betanyc-ai-workspace#1655 and #1672 (epic #1652).
   never use the network still answer; the reset seam refuses to run outside the test runner;
   two different tool calls at once start their requests 1.1 s after the first finished; a
   retry that waited in the queue past 120 s is not sent; a call that arrives while the block
-  page is still being read still gets the incident ID.
+  page is still being read still gets the incident ID; a call that waited more than 120 s for
+  its first turn does not retry a 503.
+- `test/bot-check-lock.test.mjs` (#51): the bot-check page on `/api` (200, and in a 302) and
+  on smart search (200, and in a 302) locks, a queued call is not sent, later calls on every
+  path send nothing; an ordinary 200, a database timeout served as HTML, a smart search page
+  without results and a plain 302 do not lock; smart search never points to the other tools
+  after a redirect or the bot-check page.
+- `test/errors.test.mjs`: a multi-line error with a stack line and a file path gives only its
+  first line, through a tool and in a reply cut off mid-read.
+- `test/answers.test.mjs`: every tool's answer gives the same official-or-modified answer as
+  `about_data` for its source; the API sources' detail says values are trimmed; the smart
+  search label says what it leaves out.
 - `test/pace.test.mjs` runs on a virtual clock (`test/helpers/upstream.mjs`) with no timer
   slack, so a pacer at 1,050 ms or one pacer per call fails it; one real-clock test checks
   the monotonic clock while the wall clock jumps.

@@ -69,7 +69,7 @@ Exposes 12 tools over MCP:
 | `about_betanyc` | Who built this server, where to report a bug in this server or ask for a new feature, and BetaNYC's links |
 | `about_data` | Where each kind of data comes from, from [DATA-SOURCES.json](DATA-SOURCES.json): the publisher, whether it is an official record, how current it is, terms and credit line, where to check a figure and where to report an error (filter by topic or tool name) |
 
-Every answer names its source and publisher, links to the Checkbook NYC API page, and gives the time it was fetched (a `source` object and a "Source: … As of … Link: …" line). Every list says which records it holds, of how many, and which `page` to ask for next (a `showing` sentence).
+Every answer names its source and publisher, links to the Checkbook NYC API page, and gives the time it was fetched (a `source` object and a line after the JSON). `about_data` says BetaNYC modified this data (it turns XML into JSON, asks for fewer fields and trims spaces from values), so that line says so too: "BetaNYC modified this data: … This copy should not be considered the official record. Fetched … Official record: …". Every list says which records it holds, of how many, and which `page` to ask for next (a `showing` sentence).
 
 Every tool only reads data, and says so to your AI app: each declares MCP tool annotations (`readOnlyHint: true`; `openWorldHint: true` on the Checkbook tools, which call the live API).
 
@@ -405,7 +405,7 @@ The NYC Comptroller's office set these limits for the Checkbook NYC API. Both we
 
 | Limit | Value | How this server handles it |
 |---|---|---|
-| Request rate | **1 request per second**, per IP address, for POST requests to `/api` | Enforced internally. One request at a time, process-wide, retries included. Each starts at least 1.1 seconds after the previous one finished (its reply's headers arrived, or it failed or timed out), timed on the monotonic clock. Two copies of this server on one network share the limit, and this server cannot see the other (#28). |
+| Request rate | **1 request per second**, per IP address, for POST requests to `/api` | Enforced internally. One request at a time, process-wide, retries included. Each starts at least 1.1 seconds after the previous one finished (its reply arrived, or it failed or timed out), timed on the monotonic clock. For a 2xx or 3xx reply, "arrived" means the whole reply, because the server reads it for the bot-check page first. Two copies of this server on one network share the limit, and this server cannot see the other (#28). |
 | Records per call | **20,000** | Accepted as the ceiling for `page_size`. The default stays at 50, because the practical limit for an MCP response is your context window rather than the API. |
 
 **Exceeding the rate limit has consequences beyond a throttle.** The API sits behind an Imperva edge that will place a client into a blocked state that persists well past the burst that caused it, and presents as an HTTP 403 on every subsequent request, including from an ordinary browser on the same network. If you fork this server or write your own client, pace your requests.
@@ -415,15 +415,16 @@ Each request times out after 60 seconds. The timeout is longer than usual on pur
 | Reply | Retried? |
 |---|---|
 | 2xx | No: it is the answer. |
-| 3xx redirect | No: never followed, returned as an error. |
+| 3xx redirect | No: never followed, returned as an error. `smart_search` also says to stop calling Checkbook NYC and to report it. |
 | **403 or 429** | **Never**, not even once, not even with `Retry-After`. The server stops sending anything to Checkbook NYC until it is restarted (see below). |
+| **The bot-check page** (a 2xx or 3xx the server recognizes as it) | **Never.** The same as a 403 or 429: the server stops until it is restarted (see below). |
 | Other 4xx | No: it is an answer. |
 | 5xx | Yes, up to 2 retries, waiting as long as `Retry-After` asks or a growing backoff. |
 | Network error or timeout | Yes, up to 2 retries, with a growing backoff. |
 
 Every attempt, first or retry, waits its turn in the same pacer, so a retry is never sent within 1.1 seconds of the end of the request before it. No retry starts more than 120 seconds after the call began, time spent waiting in the pacer's queue included, so a timed-out request is retried at most once.
 
-**After a 403 or 429, the server stops until someone restarts it.** Checkbook NYC answers 403 or 429 when it has blocked or rate-limited your network. From that moment the server process sends nothing more to Checkbook NYC: not the call that got the reply, not the calls already waiting their turn, and not any later call, from any tool. There is no timer and it never unlocks by itself. Each of those calls answers with an error that says when the block happened, that asking again will not help and could make the block last longer, and to report it to whoever runs the server, with the incident ID if Checkbook gave one. `about_data`, `about_betanyc` and `whats_changed` keep working, because they never use the network. To start again, a person checks first (has the block cleared? did something send too many requests?), then restarts the server. Decided in #51.
+**After a 403 or 429, or the bot-check page, the server stops until someone restarts it.** Checkbook NYC answers 403 or 429 when it has blocked or rate-limited your network. Sometimes it answers with its bot-check page instead, with a status of 200 or a redirect. That is the same block in another form, so it stops the server the same way. The server counts a reply as the bot-check page only when it already recognized it as one: a page with the Incapsula markers (on either path), or, from `/api`, a web page where the API's XML was expected. A plain redirect without those markers is an error, but does not stop the server. The bot-check rule was decided on 2026-11-18 and waits for the owner to confirm it (`BOT_CHECK_LOCKS` in `src/checkbook.ts`). From that moment the server process sends nothing more to Checkbook NYC: not the call that got the reply, not the calls already waiting their turn, and not any later call, from any tool. There is no timer and it never unlocks by itself. Each of those calls answers with an error that says when the block happened, that asking again will not help and could make the block last longer, and to report it to whoever runs the server, with the incident ID if Checkbook gave one. `about_data`, `about_betanyc` and `whats_changed` keep working, because they never use the network. To start again, a person checks first (has the block cleared? did something send too many requests?), then restarts the server. Decided in #51.
 
 This server also declines to follow HTTP redirects. A redirect chain is followed inside a single `fetch()` call, where rate pacing cannot reach it, so one logical API call can arrive at the origin as dozens of requests.
 
@@ -434,6 +435,7 @@ This server also declines to follow HTTP redirects. A redirect chain is followed
 - **Authentication:** none. Requests identify themselves only by User-Agent: `betanyc-checkbook-mcp/<version> (github.com/BetaNYC/nyc-checkbook-mcp)`, never a browser's.
 - **Coverage:** Citywide agencies + NYCEDC and NYCHA as other government entities (OGE)
 - **Fiscal year:** NYC fiscal year runs July 1 – June 30 (FY2025 = July 2024 – June 2025)
+- **Known gap: one list of records per reply.** The server reads only the first list of records under `result_records`. Every reply seen so far has one. Whether a real reply can have more cannot be checked without live calls; if one did, the records in the other lists would be left out.
 - **`smart_search` is disabled by default:** the `/smart_search` web path is not a supported API endpoint (WAF-fronted, JS-rendered), so the server does not call it unless `CHECKBOOK_ENABLE_SMART_SEARCH=1` is set. Use the structured XML-API tools; see the note under *Tools reference*.
 
 ---

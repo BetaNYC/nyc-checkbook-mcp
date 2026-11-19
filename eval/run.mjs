@@ -59,7 +59,7 @@ export async function ask(q) {
   if (c.field) {
     let json;
     try {
-      json = JSON.parse(text.split("\n\nSource: ")[0]);
+      json = JSON.parse(text.split("\n\n")[0]);
     } catch {
       failures.push("answer has no JSON");
     }
